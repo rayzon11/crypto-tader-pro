@@ -32,38 +32,44 @@ export default function AgentCard({
 }) {
   const score = smartScore(report);
   const status = report?.status ?? "offline";
-  const statusBg =
-    status === "active"
-      ? "bg-green-900"
-      : status === "halted"
-      ? "bg-red-900"
-      : "bg-gray-700";
   const pnlColor = (report?.pnl ?? 0) >= 0 ? "text-green-400" : "text-red-400";
+
+  const signalBg =
+    report?.signal === "BUY"
+      ? "bg-green-500/20 text-green-400"
+      : report?.signal === "SELL"
+      ? "bg-red-500/20 text-red-400"
+      : "bg-slate-700/50 text-slate-400";
 
   return (
     <div
-      className="bg-slate-800 rounded-lg p-3 flex flex-col gap-1 border"
-      style={{ borderColor: `${tierColor}44` }}
+      className="card-hover bg-slate-800/50 rounded-xl p-3 flex flex-col gap-1.5 border border-slate-700/30 relative overflow-hidden"
     >
+      {/* Tier accent line */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[2px]"
+        style={{ background: `linear-gradient(90deg, ${tierColor}, transparent)` }}
+      />
+
       {/* Header */}
       <div className="flex justify-between items-center">
-        <span
-          className="font-bold text-[11px] uppercase"
-          style={{ color: tierColor }}
-        >
-          {name}
+        <span className="font-bold text-[11px] uppercase tracking-wide" style={{ color: tierColor }}>
+          {name.replace(/_/g, " ")}
         </span>
         <ScoreBadge score={score} />
       </div>
 
       {/* Status + Signal */}
       <div className="flex gap-1.5 items-center">
-        <span
-          className={`${statusBg} text-white text-[9px] rounded px-1.5 py-0.5`}
-        >
-          {status}
+        <span className="flex items-center gap-1">
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              status === "active" ? "bg-green-500" : status === "halted" ? "bg-red-500" : "bg-gray-500"
+            }`}
+          />
+          <span className="text-[9px] text-slate-400 uppercase">{status}</span>
         </span>
-        <span className="text-[10px] text-blue-400">
+        <span className={`text-[9px] rounded px-1.5 py-0.5 ${signalBg}`}>
           {report?.signal ?? "\u2014"}
         </span>
       </div>
@@ -71,18 +77,29 @@ export default function AgentCard({
       {/* PnL + Win Rate */}
       <div className="flex justify-between text-[10px]">
         <span className={pnlColor}>
-          P&L: {(report?.pnl ?? 0) >= 0 ? "+" : ""}
-          {(report?.pnl ?? 0).toFixed(4)}
+          {(report?.pnl ?? 0) >= 0 ? "+" : ""}
+          {(report?.pnl ?? 0).toFixed(4)} BTC
         </span>
         <span className="text-slate-400">
-          WR: {((report?.win_rate ?? 0.5) * 100).toFixed(0)}%
+          WR {((report?.win_rate ?? 0.5) * 100).toFixed(0)}%
         </span>
       </div>
 
-      {/* Weight + Trades */}
-      <div className="text-[9px] text-slate-500">
-        Wt: {(report?.weight ?? 1.0).toFixed(2)} | Trades:{" "}
-        {report?.trade_count ?? 0}
+      {/* Progress bar for win rate */}
+      <div className="w-full h-1 bg-slate-700/50 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{
+            width: `${(report?.win_rate ?? 0.5) * 100}%`,
+            background: `linear-gradient(90deg, ${tierColor}88, ${tierColor})`,
+          }}
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="text-[9px] text-slate-600 flex justify-between">
+        <span>Wt: {(report?.weight ?? 1.0).toFixed(2)}</span>
+        <span>{report?.trade_count ?? 0} trades</span>
       </div>
     </div>
   );

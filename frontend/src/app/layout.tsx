@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "CryptoBot — 20 Agent Command Center",
-  description: "Smart Learning Dashboard for 20-Agent Autonomous Trading System",
+  title: "CryptoBot - 23 Agent Autonomous Trading System",
+  description:
+    "Smart Learning Dashboard for 23-Agent Autonomous Crypto Trading System with Self-Learning Security",
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>",
+  },
 };
 
 export default function RootLayout({
@@ -13,7 +18,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Sidebar />
+        <main className="ml-16 lg:ml-56 min-h-screen">{children}</main>
+      </body>
     </html>
   );
 }

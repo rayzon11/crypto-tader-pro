@@ -2,10 +2,15 @@
 
 export default function ScoreBadge({ score }: { score: number }) {
   const color =
-    score >= 70 ? "bg-green-500" : score >= 45 ? "bg-yellow-500" : "bg-red-500";
+    score >= 70
+      ? "from-green-500 to-emerald-600"
+      : score >= 45
+      ? "from-yellow-500 to-amber-600"
+      : "from-red-500 to-rose-600";
+
   return (
     <span
-      className={`text-[11px] font-bold text-white ${color} rounded px-1.5 py-0.5 inline-block`}
+      className={`text-[10px] font-bold text-white bg-gradient-to-r ${color} rounded-md px-1.5 py-0.5 inline-block shadow-sm`}
     >
       {score}
     </span>
