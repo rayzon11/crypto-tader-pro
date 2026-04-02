@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/start_all.sh — Launch all 20 agents + supervisor in tmux
+# scripts/start_all.sh — Launch all 25 agents + supervisor in tmux
 set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,6 +15,7 @@ AGENTS=(
   "agents/strategy/mean_reversion_agent"
   "agents/strategy/arbitrage_agent"
   "agents/strategy/breakout_agent"
+  "agents/strategy/indicator_master_agent"
   "agents/data_risk/sentiment_agent"
   "agents/data_risk/onchain_agent"
   "agents/data_risk/risk_agent"
@@ -30,6 +31,7 @@ AGENTS=(
   "agents/intelligence/alert_agent"
   "agents/intelligence/audit_agent"
   "agents/intelligence/rebalance_agent"
+  "agents/intelligence/news_agent"
   "agents/security/npm_security_agent"
   "agents/security/db_security_agent"
   "agents/security/code_security_agent"
@@ -59,6 +61,6 @@ for i in "${!AGENTS[@]}"; do
 done
 
 echo ""
-echo "All 23 agents started."
+echo "All 25 agents started."
 echo "Attach: tmux attach -t $SESSION"
 echo "Dashboard: http://localhost:3000"

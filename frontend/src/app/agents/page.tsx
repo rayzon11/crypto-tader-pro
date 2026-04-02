@@ -29,6 +29,9 @@ const ALL_AGENTS = [
   { name: "npm_security", tier: "Security", desc: "NPM audit + lockfile integrity + typosquatting detection", libs: "subprocess, hashlib" },
   { name: "db_security", tier: "Security", desc: "SQL injection monitoring + query anomaly baselines", libs: "asyncpg, re" },
   { name: "code_security", tier: "Security", desc: "Secret scanning + OWASP checks + file integrity", libs: "hashlib, re" },
+  // New agents (v2)
+  { name: "indicator_master", tier: "Strategy", desc: "Master of all 10 indicators (RSI, MACD, EMA, Bollinger, Stoch, ADX, OBV, VWAP, Ichimoku, Fibonacci) with self-learning weights", libs: "ccxt, pandas_ta, numpy" },
+  { name: "news", tier: "Intelligence", desc: "Live crypto news fetching + sentiment analysis from CoinGecko & CryptoPanic with self-learning keyword weights", libs: "aiohttp" },
 ];
 
 const TIER_COLORS: Record<string, string> = {
@@ -84,7 +87,7 @@ export default function AgentsPage() {
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            All 23 autonomous agents across 5 operational layers
+            All 25 autonomous agents across 5 operational layers
           </p>
         </div>
 
@@ -92,7 +95,7 @@ export default function AgentsPage() {
         <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="card-hover bg-gradient-to-br from-green-500/10 to-transparent rounded-xl border border-slate-800/50 px-4 py-3">
             <div className="text-[10px] text-slate-500 uppercase">Active</div>
-            <div className="text-2xl font-bold text-green-400">{totalActive}/23</div>
+            <div className="text-2xl font-bold text-green-400">{totalActive}/25</div>
           </div>
           <div className="card-hover bg-gradient-to-br from-blue-500/10 to-transparent rounded-xl border border-slate-800/50 px-4 py-3">
             <div className="text-[10px] text-slate-500 uppercase">Avg Win Rate</div>
@@ -205,7 +208,7 @@ export default function AgentsPage() {
         </div>
 
         <div className="mt-8 text-center text-[10px] text-slate-700 pb-4">
-          All agents inherit from BaseAgent ABC with Redis pub/sub, heartbeat, and command listening.
+          All 25 agents inherit from BaseAgent ABC with self-learning, Redis pub/sub, heartbeat, and shared data.
         </div>
       </div>
     </div>

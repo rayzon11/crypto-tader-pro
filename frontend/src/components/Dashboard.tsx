@@ -7,10 +7,10 @@ import LiveTicker from "./LiveTicker";
 import { generateMasterState } from "@/lib/mockData";
 
 const TIERS: Record<string, string[]> = {
-  Strategy: ["trend", "momentum", "mean_reversion", "arbitrage", "breakout"],
+  Strategy: ["trend", "momentum", "mean_reversion", "arbitrage", "breakout", "indicator_master"],
   "Data+Risk": ["sentiment", "onchain", "risk", "portfolio", "orderbook"],
   Execution: ["order", "slippage", "stoploss", "fee", "defi"],
-  Intelligence: ["ml", "backtest", "alert", "audit", "rebalance"],
+  Intelligence: ["ml", "backtest", "alert", "audit", "rebalance", "news"],
   Security: ["npm_security", "db_security", "code_security"],
 };
 
@@ -57,7 +57,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">
               <span className="bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 bg-clip-text text-transparent">
-                23 AGENT COMMAND CENTER
+                25 AGENT COMMAND CENTER
               </span>
             </h1>
             <p className="text-xs text-slate-500 mt-1">
@@ -151,7 +151,7 @@ export default function Dashboard() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-[10px] text-slate-700 pb-4">
-          CryptoBot v2.0 | 23 Agents | 5 Layers | Self-Learning Security | For educational purposes only
+          CryptoBot v2.0 | 25 Agents | 5 Layers | Self-Learning AI | For educational purposes only
         </div>
       </div>
     </div>

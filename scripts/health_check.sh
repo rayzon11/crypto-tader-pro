@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# scripts/health_check.sh — Check all agent heartbeats in Redis
+# scripts/health_check.sh — Check all 25 agent heartbeats in Redis
 set -euo pipefail
 
 AGENTS=(
-  trend momentum mean_reversion arbitrage breakout
+  trend momentum mean_reversion arbitrage breakout indicator_master
   sentiment onchain risk portfolio orderbook
   order slippage stoploss fee defi
-  ml backtest alert audit rebalance
+  ml backtest alert audit rebalance news
   npm_security db_security code_security
 )
 

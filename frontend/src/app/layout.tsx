@@ -3,9 +3,9 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "CryptoBot - 23 Agent Autonomous Trading System",
+  title: "CryptoBot - 25 Agent Autonomous Trading System",
   description:
-    "Smart Learning Dashboard for 23-Agent Autonomous Crypto Trading System with Self-Learning Security",
+    "Smart Learning Dashboard for 25-Agent Autonomous Crypto Trading System with Self-Learning AI",
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>",
   },

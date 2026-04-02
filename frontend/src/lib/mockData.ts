@@ -65,6 +65,9 @@ const AGENT_CONFIGS: Record<string, { tier: string; baseWinRate: number; basePnl
   npm_security: { tier: "Security", baseWinRate: 0.88, basePnl: 0.0 },
   db_security: { tier: "Security", baseWinRate: 0.91, basePnl: 0.0 },
   code_security: { tier: "Security", baseWinRate: 0.85, basePnl: 0.0 },
+  // New agents (v2)
+  indicator_master: { tier: "Strategy", baseWinRate: 0.69, basePnl: 0.0278 },
+  news: { tier: "Intelligence", baseWinRate: 0.58, basePnl: 0.0098 },
 };
 
 function seededRandom(seed: number): number {
@@ -267,6 +270,63 @@ export function generateSecurityScans(): SecurityScan[] {
       resolved: true,
     },
   ];
+}
+
+// --- NEWS DATA ---
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  source: string;
+  sentiment: "positive" | "negative" | "neutral";
+  score: number;
+  timestamp: string;
+  url: string;
+}
+
+const NEWS_HEADLINES = [
+  { title: "Bitcoin ETF sees record $1.2B inflows as institutional adoption accelerates", sentiment: "positive" as const, source: "CoinDesk" },
+  { title: "Ethereum Layer 2 transactions hit all-time high, surpassing mainnet", sentiment: "positive" as const, source: "The Block" },
+  { title: "SEC delays decision on Solana ETF application to Q3 2025", sentiment: "negative" as const, source: "Reuters" },
+  { title: "Global crypto market cap reaches $2.8 trillion amid renewed optimism", sentiment: "positive" as const, source: "CoinGecko" },
+  { title: "Major exchange reports zero security incidents for 365 consecutive days", sentiment: "positive" as const, source: "Binance" },
+  { title: "DeFi total value locked surges past $150B milestone", sentiment: "positive" as const, source: "DeFi Llama" },
+  { title: "Federal Reserve signals potential rate cuts, crypto markets react positively", sentiment: "positive" as const, source: "Bloomberg" },
+  { title: "Bitcoin mining difficulty reaches new record high", sentiment: "neutral" as const, source: "CoinTelegraph" },
+  { title: "Whale alert: 10,000 BTC moved from cold storage to exchange", sentiment: "negative" as const, source: "Whale Alert" },
+  { title: "South Korea announces new crypto tax framework effective 2026", sentiment: "negative" as const, source: "Korea Herald" },
+  { title: "Lightning Network capacity doubles in Q1, reaching 6,500 BTC", sentiment: "positive" as const, source: "Bitcoin Magazine" },
+  { title: "Stablecoin market cap hits $200B as USDC gains market share", sentiment: "neutral" as const, source: "The Block" },
+  { title: "Solana processes 100M transactions in single day, new record", sentiment: "positive" as const, source: "Solana Foundation" },
+  { title: "Crypto venture funding rebounds with $3.2B raised in Q1", sentiment: "positive" as const, source: "Messari" },
+  { title: "European MiCA regulations take full effect, exchanges adapt", sentiment: "neutral" as const, source: "CoinDesk" },
+  { title: "BNB Chain introduces zero-gas fee transactions for micro-payments", sentiment: "positive" as const, source: "BNB Chain" },
+  { title: "Avalanche subnet launches for institutional DeFi with KYC compliance", sentiment: "positive" as const, source: "Avalanche" },
+  { title: "Bitcoin correlation with S&P 500 drops to 2-year low", sentiment: "neutral" as const, source: "Glassnode" },
+  { title: "Major bank announces Bitcoin custody service for wealth management clients", sentiment: "positive" as const, source: "Financial Times" },
+  { title: "Crypto market volatility index drops to 6-month low", sentiment: "neutral" as const, source: "CryptoCompare" },
+];
+
+export function generateNewsItems(count: number = 20, tick: number = 0): NewsItem[] {
+  const items: NewsItem[] = [];
+  for (let i = 0; i < Math.min(count, NEWS_HEADLINES.length); i++) {
+    const idx = (i + tick) % NEWS_HEADLINES.length;
+    const headline = NEWS_HEADLINES[idx];
+    const score = headline.sentiment === "positive" ? 0.3 + seededRandom(i * 11 + tick) * 0.5
+      : headline.sentiment === "negative" ? -(0.3 + seededRandom(i * 13 + tick) * 0.5)
+      : (seededRandom(i * 17 + tick) - 0.5) * 0.3;
+
+    items.push({
+      id: `NEWS${String(i + 1).padStart(3, "0")}`,
+      title: headline.title,
+      source: headline.source,
+      sentiment: headline.sentiment,
+      score: Math.round(score * 1000) / 1000,
+      timestamp: new Date(Date.now() - i * 420000 - Math.floor(seededRandom(i * 19 + tick) * 300000)).toISOString(),
+      url: "#",
+    });
+  }
+  return items;
 }
 
 export const PORTFOLIO_ALLOCATION = [

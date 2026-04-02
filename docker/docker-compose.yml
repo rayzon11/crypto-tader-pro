@@ -256,6 +256,26 @@ services:
       args:
         AGENT_MODULE: agents.security.code_security_agent
 
+  # === NEW AGENTS (v2) ===
+  agent-news:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.news_agent
+    environment:
+      REDIS_HOST: redis
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+
+  agent-indicator-master:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.indicator_master_agent
+
   # === DASHBOARD ===
   dashboard:
     build:

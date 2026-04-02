@@ -42,7 +42,7 @@ export default function MasterStats({
     },
     {
       label: "Active Agents",
-      value: `${activeAgents}/23`,
+      value: `${activeAgents}/25`,
       sub: `${Math.round((activeAgents / 23) * 100)}% online`,
       colorClass: activeAgents >= 20 ? "text-green-400" : activeAgents >= 15 ? "text-blue-400" : "text-yellow-400",
       bg: "from-blue-500/10 to-blue-500/5",
