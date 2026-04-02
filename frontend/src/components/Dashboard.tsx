@@ -5,6 +5,8 @@ import AgentCard from "./AgentCard";
 import MasterStats from "./MasterStats";
 import LiveTicker from "./LiveTicker";
 import { generateMasterState } from "@/lib/mockData";
+import { AGENTS, AGENT_TOOLS, AGENT_HOOKS } from "@/lib/agents";
+import { getSectorHeatMap, getCorrelationMatrix, getEconomicCalendar } from "@/lib/bloomberg";
 
 const TIERS: Record<string, string[]> = {
   Strategy: ["trend", "momentum", "mean_reversion", "arbitrage", "breakout", "indicator_master"],
@@ -132,6 +134,126 @@ export default function Dashboard() {
           </div>
         ))}
 
+        {/* Bloomberg Terminal Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          {/* Sector Heat Map */}
+          <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 overflow-hidden">
+            <div className="px-4 py-2 border-b border-slate-700/30 flex items-center gap-2">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold">BBG</span>
+              <span className="text-xs font-bold text-slate-300">Sector Heat Map</span>
+            </div>
+            <div className="p-3 space-y-1.5">
+              {getSectorHeatMap(tick).map((sector) => (
+                <div key={sector.name} className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400 w-20">{sector.name}</span>
+                  <div className="flex-1 mx-2 h-2 bg-slate-700/50 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${sector.change >= 0 ? "bg-green-500" : "bg-red-500"}`}
+                      style={{ width: `${Math.min(Math.abs(sector.change) * 10, 100)}%`, marginLeft: sector.change < 0 ? "auto" : 0 }}
+                    />
+                  </div>
+                  <span className={`w-14 text-right font-medium ${sector.change >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {sector.change >= 0 ? "+" : ""}{sector.change}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Correlation Matrix */}
+          <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 overflow-hidden">
+            <div className="px-4 py-2 border-b border-slate-700/30 flex items-center gap-2">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold">BBG</span>
+              <span className="text-xs font-bold text-slate-300">Correlation Matrix</span>
+            </div>
+            <div className="p-3 overflow-x-auto">
+              {(() => {
+                const { pairs, matrix } = getCorrelationMatrix(tick);
+                return (
+                  <table className="text-[9px] w-full">
+                    <thead>
+                      <tr>
+                        <th className="text-left text-slate-500 px-1"></th>
+                        {pairs.map((p) => <th key={p} className="text-center text-slate-500 px-1">{p}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pairs.map((p, i) => (
+                        <tr key={p}>
+                          <td className="text-slate-400 px-1 font-medium">{p}</td>
+                          {matrix[i].map((val, j) => (
+                            <td key={j} className="text-center px-1 py-0.5">
+                              <span className={`px-1 py-0.5 rounded ${
+                                val >= 0.8 ? "bg-green-500/30 text-green-400" :
+                                val >= 0.5 ? "bg-yellow-500/20 text-yellow-400" :
+                                "bg-slate-700/50 text-slate-400"
+                              }`}>
+                                {val.toFixed(2)}
+                              </span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Economic Calendar */}
+          <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 overflow-hidden">
+            <div className="px-4 py-2 border-b border-slate-700/30 flex items-center gap-2">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold">BBG</span>
+              <span className="text-xs font-bold text-slate-300">Economic Calendar</span>
+            </div>
+            <div className="divide-y divide-slate-800/50">
+              {getEconomicCalendar(tick).slice(0, 6).map((event, i) => (
+                <div key={i} className="px-3 py-1.5 flex items-center justify-between text-[10px]">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      event.impact === "high" ? "bg-red-500" : event.impact === "medium" ? "bg-yellow-500" : "bg-slate-500"
+                    }`} />
+                    <span className="text-slate-400">{event.indicator}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-300 font-medium">{event.actual}</span>
+                    <span className="text-slate-600 text-[9px]">exp {event.forecast}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Agent Architecture Overview */}
+        <div className="mb-6 p-4 rounded-xl bg-slate-800/30 border border-slate-700/30">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Agent Architecture — Claw Code Pattern</h3>
+            <div className="flex gap-3 text-[9px]">
+              <span className="text-slate-500">{AGENT_TOOLS.length} Tools</span>
+              <span className="text-slate-500">{AGENT_HOOKS.length} Hooks</span>
+              <span className="text-slate-500">5 Decision Phases</span>
+            </div>
+          </div>
+          <div className="flex gap-2 text-[10px] overflow-x-auto pb-1">
+            {["Observe", "Analyze", "Decide", "Execute", "Learn"].map((phase, i) => (
+              <div key={phase} className="flex items-center gap-1.5 flex-shrink-0">
+                <div className={`px-3 py-1.5 rounded-lg border ${
+                  i === 0 ? "bg-blue-500/10 border-blue-500/30 text-blue-400" :
+                  i === 1 ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
+                  i === 2 ? "bg-amber-500/10 border-amber-500/30 text-amber-400" :
+                  i === 3 ? "bg-green-500/10 border-green-500/30 text-green-400" :
+                  "bg-cyan-500/10 border-cyan-500/30 text-cyan-400"
+                }`}>
+                  {phase}
+                </div>
+                {i < 4 && <span className="text-slate-600">→</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Legend */}
         <div className="mt-4 px-4 py-3 bg-slate-800/30 rounded-xl border border-slate-700/20 text-[11px] text-slate-400 flex items-center gap-5 flex-wrap">
           <span className="text-slate-500 font-medium">Smart Score:</span>
@@ -151,7 +273,7 @@ export default function Dashboard() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-[10px] text-slate-700 pb-4">
-          CryptoBot v2.0 | 25 Agents | 5 Layers | Self-Learning AI | For educational purposes only
+          CryptoBot v3.0 | 25 Agents | Bloomberg Integration | Claw Code Architecture | For educational purposes only
         </div>
       </div>
     </div>
