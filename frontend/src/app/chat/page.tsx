@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import LiveTicker from "@/components/LiveTicker";
-import { AGENTS, getAgentsByTier, type AgentProfile } from "@/lib/agents";
+import { AGENTS } from "@/lib/agents";
+import {
+  generateAgentResponse,
+  generateAgentConversation,
+  loadAgentStates,
+  saveAgentStates,
+  type AgentState,
+} from "@/lib/agentMemory";
 
 interface ChatMessage {
   id: string;
@@ -12,81 +19,69 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   channel: string;
-}
-
-const TRADING_FLOOR_MESSAGES: { agent: string; content: string }[] = [
-  { agent: "trend", content: "EMA(9) just crossed above EMA(21) on BTC/USDT 4H chart. Bullish signal confirmed." },
-  { agent: "momentum", content: "Agreed. RSI at 58 with room to run. StochRSI showing bullish momentum divergence." },
-  { agent: "indicator_master", content: "My 10-indicator composite reads +6.2/10. STRONG_BUY signal. MACD, EMA, Stochastic, and ADX all aligned." },
-  { agent: "risk", content: "Position sizing recommendation: 15% of portfolio max. VaR(99%) at 2.3% — within limits." },
-  { agent: "sentiment", content: "Fear & Greed Index at 72 (Greed). Institutional inflows $800M today. Market sentiment supports the trade." },
-  { agent: "news", content: "Breaking: Bitcoin ETF sees $1.2B inflows. Headline sentiment score +0.78. This is very bullish." },
-  { agent: "arbitrage", content: "Seeing 0.15% spread between Binance and Kraken on BTC. Not actionable yet — watching." },
-  { agent: "orderbook", content: "Large buy wall at $67,200 (~2,500 BTC). Significant sell resistance at $68,500." },
-  { agent: "ml", content: "LSTM model predicts 73% probability of upward movement in next 4 hours. Confidence: HIGH." },
-  { agent: "stoploss", content: "Setting trailing stop at 2% below entry. Take profit target at $71,000 (+5.2%)." },
-  { agent: "portfolio", content: "Current BTC allocation: 38%. Kelly criterion suggests optimal size at 42%. Room to add." },
-  { agent: "order", content: "Executing: BUY 0.15 BTC/USDT @ $67,523 via TWAP (3 exchanges). Estimated fill: 99.7%." },
-  { agent: "fee", content: "Routing through maker orders. Expected fee: 0.075%. Gas optimization: batch transaction queued." },
-  { agent: "slippage", content: "Slippage estimate: 0.018% for 0.15 BTC order. Well within acceptable range." },
-  { agent: "breakout", content: "BTC approaching key resistance at $68,000. Volume confirmation needed for breakout signal." },
-  { agent: "mean_reversion", content: "Bollinger Bands widening. Z-score at +0.8 — not overbought yet. Mean reversion risk is low." },
-  { agent: "backtest", content: "This setup has 71% win rate historically. Average return: +2.8% over 48-hour holding period." },
-  { agent: "rebalance", content: "After this trade, portfolio will be: BTC 42%, ETH 29%, SOL 14%, BNB 10%, AVAX 5%. Within targets." },
-  { agent: "audit", content: "Trade logged to PostgreSQL. Anomaly score: 0.12 (normal). No suspicious patterns detected." },
-  { agent: "alert", content: "Notifications sent to Telegram & Discord. Position monitoring active. Will alert on SL/TP triggers." },
-  { agent: "defi", content: "FYI: Aave BTC lending rate at 3.2% APY. Consider deploying idle BTC to earn yield." },
-  { agent: "indicator_master", content: "Update: ADX at 28, trending condition confirmed. Ichimoku Cloud shows bullish kumo twist. Maintaining STRONG_BUY." },
-  { agent: "trend", content: "4H candle closed bullish engulfing. MACD histogram expanding. Trend strength: STRONG." },
-  { agent: "risk", content: "Portfolio risk check: Max drawdown today 0.8%. Kill switch threshold at 5%. System healthy." },
-];
-
-function generateMessages(channel: string, count: number, offset: number = 0): ChatMessage[] {
-  const msgs: ChatMessage[] = [];
-  const pool = channel === "trading-floor" ? TRADING_FLOOR_MESSAGES : TRADING_FLOOR_MESSAGES.filter((m) => m.agent === channel);
-  for (let i = 0; i < Math.min(count, pool.length); i++) {
-    const idx = (i + offset) % pool.length;
-    const msg = pool[idx];
-    const agent = AGENTS.find((a) => a.name === msg.agent);
-    msgs.push({
-      id: `MSG${Date.now()}-${i}`,
-      agent: msg.agent,
-      agentAvatar: agent?.avatar || "🤖",
-      agentDisplayName: agent?.displayName || msg.agent,
-      content: msg.content,
-      timestamp: new Date(Date.now() - (count - i) * 45000).toISOString(),
-      channel,
-    });
-  }
-  return msgs;
+  isAdmin?: boolean;
 }
 
 export default function ChatPage() {
   const [activeChannel, setActiveChannel] = useState("trading-floor");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [adminMessage, setAdminMessage] = useState("");
+  const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({});
+  const [mounted, setMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    setMessages(generateMessages(activeChannel, 15));
-  }, [activeChannel]);
-
-  // Simulate new messages
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 8000);
-    return () => clearInterval(interval);
+    setMounted(true);
+    setAgentStates(loadAgentStates());
   }, []);
 
+  // Generate initial trading floor messages
   useEffect(() => {
-    if (tick === 0) return;
-    const newMsgs = generateMessages(activeChannel, 1, tick + 15);
-    if (newMsgs.length > 0) {
-      setMessages((prev) => [...prev, ...newMsgs].slice(-50));
-    }
-  }, [tick, activeChannel]);
+    if (!mounted) return;
+    const convo = generateAgentConversation(0);
+    const msgs: ChatMessage[] = convo.map((msg, i) => {
+      const agent = AGENTS.find((a) => a.name === msg.agent);
+      return {
+        id: `INIT${i}`,
+        agent: msg.agent,
+        agentAvatar: agent?.avatar || "🤖",
+        agentDisplayName: agent?.displayName || msg.agent,
+        content: msg.content,
+        timestamp: new Date(Date.now() - (convo.length - i) * 30000).toISOString(),
+        channel: "trading-floor",
+      };
+    });
+    setMessages(msgs);
+  }, [mounted, activeChannel]);
+
+  // Simulate new agent conversations every 10 seconds
+  useEffect(() => {
+    if (!mounted) return;
+    const interval = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [mounted]);
+
+  useEffect(() => {
+    if (tick === 0 || !mounted) return;
+    if (activeChannel !== "trading-floor") return;
+    const convo = generateAgentConversation(tick);
+    const newMsgs: ChatMessage[] = convo.map((msg, i) => {
+      const agent = AGENTS.find((a) => a.name === msg.agent);
+      return {
+        id: `T${tick}-${i}`,
+        agent: msg.agent,
+        agentAvatar: agent?.avatar || "🤖",
+        agentDisplayName: agent?.displayName || msg.agent,
+        content: msg.content,
+        timestamp: new Date().toISOString(),
+        channel: "trading-floor",
+      };
+    });
+    setMessages((prev) => [...prev, ...newMsgs].slice(-60));
+  }, [tick, mounted, activeChannel]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -94,7 +89,9 @@ export default function ChatPage() {
 
   const handleSendAdmin = () => {
     if (!adminMessage.trim()) return;
-    const msg: ChatMessage = {
+
+    // Add admin message
+    const adminMsg: ChatMessage = {
       id: `ADMIN${Date.now()}`,
       agent: "admin",
       agentAvatar: "👑",
@@ -102,20 +99,96 @@ export default function ChatPage() {
       content: adminMessage,
       timestamp: new Date().toISOString(),
       channel: activeChannel,
+      isAdmin: true,
     };
-    setMessages((prev) => [...prev, msg]);
+    setMessages((prev) => [...prev, adminMsg]);
+
+    const msgText = adminMessage;
     setAdminMessage("");
+
+    // Agent responds after short delay
+    setTimeout(() => {
+      if (activeChannel === "trading-floor") {
+        // Multiple agents respond on trading floor
+        const responders = AGENTS.filter((a) => a.tier === "Strategy" || a.name === "risk" || a.name === "ml")
+          .slice(0, 3);
+        const responses: ChatMessage[] = responders.map((agent, i) => {
+          const state = agentStates[agent.name] || {
+            name: agent.name, memory: [], currentAnalysis: "", mood: "neutral" as const,
+            recentResearch: [], tradeCount: 0, lastTradeResult: "none" as const,
+          };
+          return {
+            id: `RESP${Date.now()}-${i}`,
+            agent: agent.name,
+            agentAvatar: agent.avatar,
+            agentDisplayName: agent.displayName,
+            content: generateAgentResponse(agent.name, msgText, state),
+            timestamp: new Date(Date.now() + (i + 1) * 1500).toISOString(),
+            channel: activeChannel,
+          };
+        });
+        responses.forEach((resp, i) => {
+          setTimeout(() => {
+            setMessages((prev) => [...prev, resp]);
+          }, (i + 1) * 1500);
+        });
+      } else {
+        // Single agent responds on their channel
+        const agent = AGENTS.find((a) => a.name === activeChannel);
+        if (agent) {
+          const state = agentStates[agent.name] || {
+            name: agent.name, memory: [], currentAnalysis: "", mood: "neutral" as const,
+            recentResearch: [], tradeCount: 0, lastTradeResult: "none" as const,
+          };
+          const resp: ChatMessage = {
+            id: `RESP${Date.now()}`,
+            agent: agent.name,
+            agentAvatar: agent.avatar,
+            agentDisplayName: agent.displayName,
+            content: generateAgentResponse(agent.name, msgText, state),
+            timestamp: new Date(Date.now() + 2000).toISOString(),
+            channel: activeChannel,
+          };
+          setTimeout(() => {
+            setMessages((prev) => [...prev, resp]);
+            // Save to memory
+            const newStates = { ...agentStates };
+            if (newStates[agent.name]) {
+              newStates[agent.name].memory.push({
+                timestamp: new Date().toISOString(),
+                type: "conversation",
+                content: `Admin asked: "${msgText}" — I responded with analysis.`,
+                confidence: 0.8,
+              });
+              if (newStates[agent.name].memory.length > 50) {
+                newStates[agent.name].memory = newStates[agent.name].memory.slice(-50);
+              }
+              saveAgentStates(newStates);
+              setAgentStates(newStates);
+            }
+          }, 2000);
+        }
+      }
+    }, 800);
   };
 
   const channels = [
     { id: "trading-floor", label: "Trading Floor", icon: "📊", desc: "All agents group chat" },
-    ...AGENTS.filter((a) => a.tier === "Strategy" || a.tier === "Intelligence").map((a) => ({
+    ...AGENTS.filter((a) => a.tier !== "Security").map((a) => ({
       id: a.name,
       label: a.displayName,
       icon: a.avatar,
       desc: a.specialty,
     })),
   ];
+
+  const channelMessages = messages.filter(
+    (m) => m.channel === activeChannel || (activeChannel !== "trading-floor" && m.agent === activeChannel)
+  );
+
+  if (!mounted) {
+    return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">Loading chat...</div>;
+  }
 
   return (
     <div className="min-h-screen text-slate-200">
@@ -127,7 +200,7 @@ export default function ChatPage() {
               Agent Chat
             </span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Monitor agent-to-agent communication and join the conversation</p>
+          <p className="text-xs text-slate-500 mt-1">Agents respond to your messages with real-time market analysis</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4" style={{ height: "calc(100vh - 180px)" }}>
@@ -140,7 +213,10 @@ export default function ChatPage() {
               {channels.map((ch) => (
                 <button
                   key={ch.id}
-                  onClick={() => setActiveChannel(ch.id)}
+                  onClick={() => {
+                    setActiveChannel(ch.id);
+                    setMessages([]);
+                  }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center gap-2 ${
                     activeChannel === ch.id
                       ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
@@ -168,23 +244,29 @@ export default function ChatPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-[10px] text-slate-500">Live</span>
+                <span className="text-[10px] text-slate-500">Live — Agents respond to messages</span>
               </div>
             </div>
 
-            {/* Message List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.map((msg) => (
+              {channelMessages.length === 0 && (
+                <div className="text-center text-slate-600 text-xs py-8">
+                  {activeChannel === "trading-floor"
+                    ? "Agents are analyzing markets... Messages will appear shortly."
+                    : `Send a message to start chatting with ${channels.find((c) => c.id === activeChannel)?.label}. Try: "What's your status?" or "Should we buy BTC?"`}
+                </div>
+              )}
+              {channelMessages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 ${msg.agent === "admin" ? "flex-row-reverse" : ""}`}
+                  className={`flex gap-3 ${msg.isAdmin ? "flex-row-reverse" : ""}`}
                 >
                   <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700/30 flex items-center justify-center flex-shrink-0 text-sm">
                     {msg.agentAvatar}
                   </div>
-                  <div className={`max-w-[75%] ${msg.agent === "admin" ? "text-right" : ""}`}>
+                  <div className={`max-w-[75%] ${msg.isAdmin ? "text-right" : ""}`}>
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className={`text-[11px] font-bold ${msg.agent === "admin" ? "text-amber-400" : "text-cyan-400"}`}>
+                      <span className={`text-[11px] font-bold ${msg.isAdmin ? "text-amber-400" : "text-cyan-400"}`}>
                         {msg.agentDisplayName}
                       </span>
                       <span className="text-[9px] text-slate-600">
@@ -192,8 +274,8 @@ export default function ChatPage() {
                       </span>
                     </div>
                     <div
-                      className={`text-xs p-3 rounded-xl ${
-                        msg.agent === "admin"
+                      className={`text-xs p-3 rounded-xl whitespace-pre-line ${
+                        msg.isAdmin
                           ? "bg-amber-500/10 border border-amber-500/20 text-amber-200"
                           : "bg-slate-900/50 border border-slate-700/20 text-slate-300"
                       }`}
@@ -206,7 +288,6 @@ export default function ChatPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Admin Input */}
             <div className="p-3 border-t border-slate-700/30">
               <div className="flex gap-2">
                 <input
@@ -214,7 +295,7 @@ export default function ChatPage() {
                   value={adminMessage}
                   onChange={(e) => setAdminMessage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSendAdmin()}
-                  placeholder="Send message as Admin..."
+                  placeholder={activeChannel === "trading-floor" ? "Ask all agents..." : `Ask ${channels.find((c) => c.id === activeChannel)?.label}...`}
                   className="flex-1 bg-slate-900/50 border border-slate-700/30 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50"
                 />
                 <button
@@ -225,7 +306,7 @@ export default function ChatPage() {
                 </button>
               </div>
               <div className="text-[9px] text-slate-600 mt-1">
-                👑 You are observing as Admin. Messages are broadcast to the channel.
+                Try: &quot;What&apos;s your status?&quot; &bull; &quot;Should we buy BTC?&quot; &bull; &quot;What are you thinking?&quot; &bull; &quot;Show me your performance&quot;
               </div>
             </div>
           </div>

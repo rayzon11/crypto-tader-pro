@@ -94,7 +94,7 @@ export function generateAgentReports(tick: number): Record<string, AgentReport> 
       win_rate: Math.max(0.3, Math.min(0.95, jitter(config.baseWinRate, 0.08, seed + 5))),
       trade_count: Math.floor(50 + seededRandom(seed + 6) * 200),
       weight: Math.max(0.5, jitter(1.2, 0.5, seed + 7)),
-      timestamp: new Date().toISOString(),
+      timestamp: typeof window !== "undefined" ? new Date().toISOString() : "",
     };
   });
 
@@ -119,7 +119,7 @@ export function generateMasterState(tick: number) {
     consensus,
     confidence: 0.65 + seededRandom(tick) * 0.3,
     agents,
-    cycleTs: new Date().toISOString(),
+    cycleTs: typeof window !== "undefined" ? new Date().toISOString() : "",
   };
 }
 

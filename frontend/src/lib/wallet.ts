@@ -68,6 +68,7 @@ const LIVE_PRICES: Record<string, number> = {
 };
 
 export function getDefaultWallet(): WalletState {
+  const now = typeof window !== "undefined" ? new Date().toISOString() : "2026-01-01T00:00:00.000Z";
   return {
     startingBalance: STARTING_BALANCE,
     balance: STARTING_BALANCE,
@@ -82,8 +83,8 @@ export function getDefaultWallet(): WalletState {
     dailyPnl: 0,
     dailyReturn: 0,
     tradesToday: 0,
-    sessionStartedAt: new Date().toISOString(),
-    lastUpdated: new Date().toISOString(),
+    sessionStartedAt: now,
+    lastUpdated: now,
   };
 }
 
