@@ -1,4 +1,4 @@
-# CryptoBot - 25-Agent Autonomous Crypto Trading System
+# CryptoTrader Pro - 25-Agent AI-Powered Trading System
 
 > **DISCLAIMER:** This is for educational purposes only. Not financial advice. Always paper trade first. Never invest money you cannot afford to lose.
 
@@ -8,232 +8,166 @@
 
 ## What Is This?
 
-CryptoBot is a **25-agent autonomous crypto trading system** where every agent is self-learning and gets smarter with every trade. Agents work together through Redis pub/sub messaging, sharing data and signals to make collective trading decisions through weighted consensus voting.
+A **distributed AI trading system** with 25 specialized agents that:
 
-The system has a **kill switch** that automatically halts all trading if losses exceed 5%, and runs in **paper trading mode** by default so you can test safely.
+- **25 Autonomous Agents** - Each with specialized role (Trader, Risk Manager, Market Analyst, etc.)
+- **Multi-Strategy Trading** - Arbitrage, Grid Trading, Trend Following, Market Making, Mean Reversion
+- **Live Dashboard** - Real-time portfolio monitoring (Bloomberg-style) on Next.js
+- **Demo Mode** - Test strategies with $10k virtual capital before going live
+- **Multi-Exchange** - Binance (CEX), Uniswap (DEX), dYdX (Perps), Coinbase
+- **Risk Management** - Hard stops (15% max drawdown, 2% per-trade risk, correlation limits)
+- **Whale Tracking** - Real-time institutional wallet monitoring via Mempool.space
+- **Exchange Connection** - Connect Binance & Coinbase APIs with client-side HMAC signing
+- **Agent Coordination** - Visible inter-agent communication across all pages
+- **Hedge Fund Analytics** - BlackRock Aladdin-style risk, consensus voting, alpha signals
 
 ---
 
 ## Architecture
 
 ```
-                         ┌─────────────────────┐
-                         │     SUPERVISOR       │
-                         │  Weighted Consensus  │
-                         │  Kill Switch (5%)    │
-                         │  Dynamic Weights     │
-                         └────────┬────────────┘
-                                  │ Redis Pub/Sub
-              ┌───────────────────┼───────────────────┐
-              │                   │                   │
-    ┌─────────┴──────┐  ┌────────┴────────┐  ┌───────┴────────┐
-    │  STRATEGY (6)  │  │  DATA+RISK (5)  │  │ EXECUTION (5)  │
-    │                │  │                 │  │                │
-    │ Trend          │  │ Sentiment       │  │ Order          │
-    │ Momentum       │  │ OnChain         │  │ Slippage       │
-    │ Mean Reversion │  │ Risk            │  │ Stop-Loss      │
-    │ Arbitrage      │  │ Portfolio       │  │ Fee            │
-    │ Breakout       │  │ Orderbook       │  │ DeFi           │
-    │ Indicator Master│  │                │  │                │
-    └────────────────┘  └─────────────────┘  └────────────────┘
-              │                   │                   │
-    ┌─────────┴──────┐  ┌────────┴────────┐
-    │ INTELLIGENCE(6)│  │  SECURITY (3)   │
-    │                │  │                 │
-    │ ML (LSTM)      │  │ NPM Security    │
-    │ Backtest       │  │ DB Security     │
-    │ Alert          │  │ Code Security   │
-    │ Audit          │  │                 │
-    │ Rebalance      │  │  Self-Learning  │
-    │ News           │  │  via Redis      │
-    └────────────────┘  └─────────────────┘
++-------------------------------------------------------------+
+|                    Claude AI Orchestrator                     |
+|              (Master Decision-Making System)                  |
++-----------------------------+-------------------------------+
+                              |
+          +-------------------+-------------------+
+          |                   |                   |
+    +-----+------+     +-----+------+     +------+-----+
+    | AGENT POOL |     | AGENT POOL |     | AGENT POOL |
+    |   (1-8)    |     |   (9-16)   |     |  (17-25)   |
+    +-----+------+     +-----+------+     +------+-----+
+          |                   |                   |
+          +-------------------+-------------------+
+                              |
+          +-------------------+--------------------+
+          |   Node.js Backend (Port 3002)          |
+          |  - Claude Orchestrator                  |
+          |  - Market Data Fetcher (Binance API)    |
+          |  - Trade Executor                       |
+          |  - Emergency Stop                       |
+          +-------------------+--------------------+
+                              |
+          +-------------------+-------------------+
+          |                   |                   |
+    +-----+---+       +------+-----+     +-------+----+
+    | Binance  |       |   dYdX     |     | Coinbase   |
+    | (Spot)   |       | (Perps)    |     | (Advanced) |
+    +----------+       +------------+     +------------+
 ```
 
 ---
 
-## All 25 Agents
+## 7 Agent Types
 
-### Strategy Layer (6 agents) - Generate trading signals
-
-| Agent | What It Does | Indicators | Libraries |
-|-------|-------------|-----------|-----------|
-| **Trend** | EMA(9)/EMA(21) crossover + MACD signal detection | EMA, MACD | ccxt, pandas_ta |
-| **Momentum** | RSI + Stochastic RSI momentum signals | RSI, StochRSI | ccxt, pandas_ta |
-| **Mean Reversion** | Bollinger Bands + Z-score mean reversion | BB, Z-score | ccxt, pandas, numpy |
-| **Arbitrage** | Cross-exchange spread detection (Binance vs Kraken) | Price spread | ccxt |
-| **Breakout** | Volume-confirmed breakouts with support/resistance | S/R levels, Volume | ccxt, pandas |
-| **Indicator Master** | Combines ALL 10 indicators with self-learning weights | RSI, MACD, EMA, BB, Stoch, ADX, OBV, VWAP, Ichimoku, Fibonacci | ccxt, pandas_ta, numpy |
-
-### Data & Risk Layer (5 agents) - Feed intelligence and enforce limits
-
-| Agent | What It Does | Data Source |
-|-------|-------------|------------|
-| **Sentiment** | Fear & Greed index + market sentiment | alternative.me API |
-| **OnChain** | Exchange netflow + whale tracking | Glassnode API |
-| **Risk** | VaR(99%) + maximum drawdown calculation | Portfolio returns |
-| **Portfolio** | Kelly criterion half-Kelly position sizing | Trade history |
-| **Orderbook** | Bid-ask depth imbalance analysis | Exchange orderbooks |
-
-### Execution Layer (5 agents) - Place and manage trades
-
-| Agent | What It Does | Mode |
-|-------|-------------|------|
-| **Order** | Limit/market/TWAP order placement | Paper/Live |
-| **Slippage** | Smart order routing across exchanges | Multi-exchange |
-| **Stop-Loss** | Trailing stop-loss + take-profit management | 2% trail, 5% TP |
-| **Fee** | Gas estimation + maker/taker fee optimization | Infura + exchanges |
-| **DeFi** | DeFi pool yield monitoring from DefiLlama | yields.llama.fi |
-
-### Intelligence Layer (6 agents) - Learn, evaluate, and improve
-
-| Agent | What It Does | Learning |
-|-------|-------------|---------|
-| **ML** | LSTM model retraining per-agent every 20 trades | PyTorch, Sharpe ratio |
-| **Backtest** | Weekly Sharpe ratio, max drawdown, win rate evaluation | Historical trades |
-| **Alert** | Telegram + Discord real-time notifications | aiohttp |
-| **Audit** | PostgreSQL trade logging + z-score anomaly detection | asyncpg |
-| **Rebalance** | Portfolio drift correction with target allocations | Kelly criterion |
-| **News** | Live crypto news fetching + AI sentiment analysis | CoinGecko, CryptoPanic |
-
-### Security Layer (3 agents) - Self-learning protection
-
-| Agent | What It Does | Learning Mechanism |
-|-------|-------------|-------------------|
-| **NPM Security** | npm audit + lockfile integrity + typosquatting detection | Learns threat patterns, stores in Redis |
-| **DB Security** | SQL injection monitoring + query anomaly baselines | EMA baselines, learns false positives |
-| **Code Security** | Secret scanning + OWASP checks + file integrity | SHA-256 hashes, severity trends |
+| Agent Type | Responsibility | Max Authority | Trigger |
+|-----------|----------------|---------------|---------|
+| **TRADER** | Execute swing/position trades | $5k per trade | Market + fundamental signals |
+| **RISK_MANAGER** | Approve/reject position sizing | Veto any trade | Position equity > 5% |
+| **MARKET_ANALYST** | Identify trends, volatility, macro | Advisory only | 4H+ timeframes |
+| **ARBITRAGE_SCOUT** | Spot CEX/DEX price gaps | $500-$2k trades | Spread > 0.3% after fees |
+| **GRID_MASTER** | Deploy range-bound strategies | $1-3k per grid | Sideways markets (RSI 40-60) |
+| **PORTFOLIO_MANAGER** | Rebalance, correlation checks | Rebalance authority | Monthly or correlation > 0.65 |
+| **ORDER_EXECUTOR** | Place orders, monitor fills | Trade execution | Upon TRADER approval |
 
 ---
 
-## How Self-Learning Works
+## 5 Trading Strategies
 
-Every agent inherits from `BaseAgent` which provides automatic self-learning:
+### 1. Arbitrage (Spread Capture)
+- Exploit price differences between CEX and DEX
+- Trigger: Spread > 0.3% after fees | Position: $500-2,000 | Win Rate: ~75%
 
-```
-Trade happens → record_trade(won, pnl)
-     │
-     ├── Appends to rolling 200-trade history
-     ├── Computes rolling Sharpe ratio (annualized)
-     ├── Computes performance trend (recent vs older trades)
-     ├── Saves learning state to Redis every 5 trades
-     └── Publishes to ML agent for model retraining
-            │
-            ├── ML agent retrains LSTM every 20 trades
-            ├── Backtest agent runs weekly optimization
-            └── Supervisor adjusts agent weights:
-                 • win_rate > 65% → weight * 1.05 (reward)
-                 • win_rate < 40% → weight * 0.90 (penalize)
-                 • improving trend → weight * 1.02 (bonus)
-```
+### 2. Grid Trading (Range-Bound)
+- Profit from volatility without directional bias
+- Trigger: RSI 40-60 | Capital: $1,000-3,000 | Dynamic layer spacing
 
-**Indicator Master** has its own self-learning: after each trade result, it adjusts the weights of its 10 indicators. Indicators that agreed with winning trades get boosted; those that agreed with losing trades get reduced.
+### 3. Trend Following (Momentum)
+- Ride directional moves on 4H+ timeframes
+- Multi-timeframe confirmation (1H + 4H + 1D must align) | Win Rate: ~60%
 
-**News Agent** learns which sentiment keywords correlate with profitable trades and adjusts keyword weights over time.
+### 4. Market Making (Liquidity Provision)
+- Capture bid-ask spread | Continuous operation | Dynamic spread adjustment
 
-**Security Agents** build learning databases in Redis, tracking threat patterns, false positives, and severity trends.
+### 5. Mean Reversion (Volatility Play)
+- Profit from extreme moves returning to average
+- Trigger: Price > 2-sigma from 20-MA + volume spike > 200%
 
 ---
 
-## How Agents Communicate
+## Risk Management (Non-Negotiable Hard Stops)
 
-All communication is through Redis pub/sub channels:
-
-```
-REPORT CHANNELS (agent → supervisor):
-  agent:report:{name}          # Status, signal, PnL, win rate, learning data
-  agent:trade_result            # Trade closures (ML agent listens)
-
-COMMAND CHANNELS (supervisor → agents):
-  agent:command:{name}          # HALT, REDUCE_SIZE
-  supervisor:broadcast          # Master reports, kill switch
-
-SHARED DATA CHANNELS (agent ↔ agent):
-  agent:shared:news_sentiment   # News agent → all agents
-  agent:shared:indicators       # Indicator master → all agents
-
-LEARNING PERSISTENCE (Redis keys):
-  agent:learning:{name}         # Self-learning state (survives restarts)
-  security:npm:learning_db      # NPM security knowledge base
-  security:db:learning_db       # DB security knowledge base
-  security:code:learning_db     # Code security knowledge base
-  news:latest                   # Latest news for dashboard
-```
+| Rule | Limit | Action |
+|------|-------|--------|
+| Max Portfolio Drawdown | 15% | HALT ALL TRADING |
+| Max Per-Trade Risk | 2% of equity | REDUCE position size |
+| Max Leverage | 3x | REJECT trade unless AGGRESSIVE mode |
+| Portfolio Correlation | > 0.65 | REBALANCE (liquidate correlated pairs) |
+| Position Concentration | > 10% | REDUCE to 8% |
+| Recovery Mode | After 10% drawdown | 50% position size for next 5 trades |
+| Slippage Buffer | 0.15% | Added to all trade cost projections |
 
 ---
 
-## Consensus Voting
+## Dashboard (Next.js on Port 3001)
 
-The Supervisor uses **weighted consensus voting** among the 6 strategy agents:
+13 pages with full Bloomberg-style dark UI:
 
-1. Each strategy agent reports a signal (BUY/SELL/HOLD/STRONG_BUY/STRONG_SELL)
-2. Signals are multiplied by the agent's weight (0.1 to 2.0)
-3. STRONG signals get 1.5x multiplier
-4. News sentiment adds +/- 0.5 to the tally
-5. BUY wins if buy_weight > sell_weight * 1.5 (and vice versa)
-6. Otherwise: HOLD
-
-The Indicator Master starts with weight 1.5 (higher than other strategy agents at 1.0) because it aggregates all indicators.
+| Page | Features |
+|------|----------|
+| **/** | 25 Agent Command Center - all agents with live scores |
+| **/demo** | Demo Trading - $10k virtual capital simulation |
+| **/swap** | Swap & Trade interface |
+| **/trading** | Price charts, trade history, pair selector |
+| **/portfolio** | Pie chart allocation, equity curve, drawdown |
+| **/agents** | Full agent registry with scores, signals, win rates |
+| **/chat** | Agent Chat - talk to agents, 3-column layout with coordination sidebar |
+| **/reports** | Performance reports and analytics |
+| **/security** | Security dashboard |
+| **/connect** | Exchange Connection - Binance & Coinbase API, real portfolio, orders, bot controls |
+| **/whales** | Whale Tracker - institutional wallets, live trades, exchange flows, smart money |
+| **/news** | Live news with CoinGecko images, Fear & Greed, trending coins |
+| **/admin** | Admin - 7 tabs: Agents, Aladdin Risk, Goals, API Keys (167 APIs), Coordination, Hedge Fund, Tools |
 
 ---
 
-## Dashboard (Next.js on Vercel)
+## Exchange Connection
 
-The dashboard is a full-featured Next.js 14 website with 6 pages:
-
-| Page | What It Shows |
-|------|--------------|
-| **/** | 25 Agent Command Center - all agents in 5 tiers with live scores |
-| **/trading** | Price charts (recharts), trade history, pair selector |
-| **/portfolio** | Pie chart allocation, equity curve, drawdown, holdings |
-| **/agents** | Full agent registry table with scores, signals, win rates |
-| **/security** | 3 security agent details, scan logs, security score |
-| **/news** | Live news feed with sentiment gauge and AI scoring |
-
-The dashboard works in **standalone demo mode** on Vercel (no backend needed) using simulated data that refreshes every few seconds. When connected to the real backend via WebSocket, it shows live data.
+Client-side HMAC-SHA256 signing - keys never leave browser:
+- **Binance**: REST API with X-MBX-APIKEY header + signature
+- **Coinbase**: Advanced Trade API with CB-ACCESS-KEY + CB-ACCESS-SIGN
+- Credentials stored in `sessionStorage` (cleared on tab close)
+- Safety: Emergency stop, max order limits, allowed pairs whitelist
 
 ---
 
 ## Quick Start
 
-### Option 1: Docker (recommended)
-
+### Frontend Only (Demo Mode)
 ```bash
-# 1. Clone and configure
-cp .env.example .env
-# Edit .env with your API keys
-
-# 2. Start everything (Redis, PostgreSQL, 25 agents, dashboard)
-cd docker
-docker compose up -d
-
-# 3. Open dashboard
-open http://localhost:3000
-```
-
-### Option 2: Manual
-
-```bash
-# 1. Install Python dependencies
-pip install -r requirements.txt
-
-# 2. Start Redis
-redis-server
-
-# 3. Launch all 25 agents
-bash scripts/start_all.sh
-
-# 4. Run dashboard
 cd frontend
 npm install
 npm run dev
+# Open http://localhost:3000
 ```
 
-### Option 3: Vercel (dashboard only)
+### Full System (Backend + Frontend)
+```bash
+# 1. Configure environment
+cp .env.example .env
+# Edit .env with API keys
 
-1. Push repo to GitHub
-2. Import in Vercel: set **Root Directory** to `frontend`
-3. Framework auto-detected as **Next.js**
-4. Deploy - dashboard works in demo mode automatically
+# 2. Install and start backend
+npm install
+npm start
+# Backend runs on port 3002
+
+# 3. Start frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+# Dashboard on port 3000
+```
 
 ---
 
@@ -241,58 +175,31 @@ npm run dev
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `CLAUDE_API_KEY` | For AI orchestrator | Anthropic API key |
 | `BINANCE_API_KEY` | For live trading | Binance API key |
 | `BINANCE_SECRET` | For live trading | Binance API secret |
-| `KRAKEN_API_KEY` | For arbitrage | Kraken API key |
-| `GLASSNODE_API_KEY` | For on-chain data | Glassnode API key |
-| `INFURA_URL` | For gas estimation | Infura project URL |
-| `TELEGRAM_BOT_TOKEN` | For alerts | Telegram bot token |
-| `TELEGRAM_CHAT_ID` | For alerts | Telegram chat ID |
-| `DISCORD_WEBHOOK_URL` | For alerts | Discord webhook URL |
-| `POSTGRES_PASSWORD` | For Docker | PostgreSQL password |
+| `BINANCE_TESTNET` | Default: true | Use testnet |
+| `MODE` | Default: DEMO | DEMO, LIVE_SMALL, or LIVE |
+| `INITIAL_EQUITY` | Default: 10000 | Starting capital |
+| `MAX_DRAWDOWN` | Default: 0.15 | 15% max drawdown |
+| `MAX_PER_TRADE_RISK` | Default: 0.02 | 2% per trade |
+| `API_PORT` | Default: 3001 | Backend port |
 | `CRYPTOPANIC_API_KEY` | For news | CryptoPanic API key (free) |
-| `PAPER_TRADING` | Default: true | Enable paper trading mode |
-| `MAX_DRAWDOWN_PCT` | Default: 0.05 | Kill switch threshold |
-| `MAX_POSITION_PCT` | Default: 0.20 | Max position size |
 
 ---
 
-## Risk Management
+## API Endpoints (Port 3002)
 
-- **Kill Switch**: Automatically halts ALL 25 agents if cumulative loss exceeds 5%
-- **Position Limits**: Max 20% of portfolio in any single asset
-- **Daily Loss Limit**: Configurable ($500 default)
-- **Paper Trading**: Enabled by default - no real funds at risk
-- **Trailing Stops**: 2% trailing stop on all positions
-- **Take Profit**: 5% take profit targets
-- **VaR Monitoring**: Real-time Value at Risk at 99% confidence
-- **Consensus Required**: Minimum 60% strategy agent agreement for trades
-
----
-
-## Trading Pairs
-
-| Pair | Target Allocation |
-|------|------------------|
-| BTC/USDT | 40% |
-| ETH/USDT | 30% |
-| SOL/USDT | 15% |
-| BNB/USDT | 10% |
-| AVAX/USDT | 5% |
-
----
-
-## Tech Stack
-
-- **Backend**: Python 3.10+ with asyncio
-- **Agent Framework**: Custom BaseAgent ABC with self-learning
-- **Communication**: Redis 7 pub/sub
-- **Database**: PostgreSQL 15 (trade logs, audit)
-- **ML**: PyTorch LSTM, scikit-learn
-- **Exchanges**: ccxt (Binance, Kraken)
-- **Dashboard**: Next.js 14, TypeScript, Tailwind CSS, recharts
-- **Deployment**: Docker Compose (backend), Vercel (frontend)
-- **Security**: 3 self-learning security agents
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/portfolio` | GET | Current portfolio state |
+| `/api/agents/decisions` | GET | Agent decision log |
+| `/api/execution-log` | GET | Trade execution history |
+| `/api/market` | GET | Live market data |
+| `/api/mode` | POST | Switch DEMO/LIVE mode |
+| `/api/emergency-stop` | POST | Halt all trading |
+| `/api/resume` | POST | Resume trading |
+| `/api/status` | GET | System status |
 
 ---
 
@@ -300,44 +207,76 @@ npm run dev
 
 ```
 crypto-trading-bot/
-├── agents/
-│   ├── base_agent.py              # ABC base with self-learning
-│   ├── strategy/                  # 6 strategy agents
-│   │   ├── trend_agent.py
-│   │   ├── momentum_agent.py
-│   │   ├── mean_reversion_agent.py
-│   │   ├── arbitrage_agent.py
-│   │   ├── breakout_agent.py
-│   │   └── indicator_master_agent.py  # NEW: 10-indicator master
-│   ├── data_risk/                 # 5 data & risk agents
-│   ├── execution/                 # 5 execution agents
-│   ├── intelligence/              # 6 intelligence agents
-│   │   ├── ml_agent.py
-│   │   ├── backtest_agent.py
-│   │   ├── alert_agent.py
-│   │   ├── audit_agent.py
-│   │   ├── rebalance_agent.py
-│   │   └── news_agent.py         # NEW: live news + sentiment
-│   └── security/                  # 3 self-learning security agents
-├── supervisor/
-│   └── supervisor_agent.py        # Master orchestrator
-├── frontend/                      # Next.js dashboard (Vercel)
+├── src/
+│   ├── index.js                    # Express server + trading loop
+│   ├── services/
+│   │   ├── claudeOrchestrator.js   # Claude API integration
+│   │   ├── marketDataFetcher.js    # Binance REST API
+│   │   └── tradeExecutor.js        # Order execution
+│   ├── utils/
+│   │   └── promptLoader.js         # Load prompt files
+│   └── agents/                     # Agent modules
+├── prompts/
+│   ├── master_orchestrator.md      # Master orchestrator logic
+│   ├── specialized_roles.md        # 7 agent role prompts
+│   ├── dashboard.md                # Dashboard spec
+│   ├── competitive_intelligence.md # Market strategy
+│   ├── implementation_guide.md     # Setup guide
+│   └── strategies/
+│       ├── arbitrage.md
+│       ├── grid_trading.md
+│       ├── trend_following.md
+│       ├── market_making.md
+│       └── mean_reversion.md
+├── frontend/
 │   └── src/
-│       ├── app/                   # 6 pages
-│       ├── components/            # UI components
-│       └── lib/mockData.ts        # Demo data generator
-├── docker/
-│   └── docker-compose.yml         # 28 services
-├── scripts/
-│   ├── start_all.sh               # tmux launcher
-│   └── health_check.sh            # Redis heartbeat checker
-├── config/
-│   └── trading_pairs.json
-├── .env.example
-├── requirements.txt
+│       ├── app/                    # 13 pages
+│       ├── components/             # Sidebar, NewsFeed, etc.
+│       └── lib/
+│           ├── agentBrain.ts       # Hedge fund analytics engine
+│           ├── apiRegistry.ts      # 167 API registry
+│           ├── exchangeConnector.ts # Binance/Coinbase connector
+│           ├── whaleTracker.ts     # Whale wallet tracking
+│           ├── aladdin.ts          # BlackRock Aladdin risk
+│           ├── agentMemory.ts      # Agent learning memory
+│           ├── bloomberg.ts        # Bloomberg-style data
+│           ├── api.ts              # CoinGecko/CryptoPanic APIs
+│           ├── agents.ts           # Agent definitions
+│           ├── wallet.ts           # Wallet utilities
+│           └── mockData.ts         # Demo data generator
+├── config/                         # Trading configuration
+├── docker/                         # Docker setup
+├── scripts/                        # Launch scripts
+├── logs/                           # Trade & agent logs
+├── package.json                    # Backend dependencies
 └── README.md
 ```
 
 ---
 
-**Built with 25 autonomous agents. Every agent learns. Every trade makes the system smarter.**
+## Success Metrics (30-Day Target)
+
+| Metric | Target |
+|--------|--------|
+| Total Return | +5-8% |
+| Sharpe Ratio | > 1.2 |
+| Max Drawdown | < 12% |
+| Win Rate | > 55% |
+| Profit Factor | > 1.5 |
+| Trade Frequency | 5-15/day |
+| Demo-Live Correlation | > 0.80 |
+
+---
+
+## Tech Stack
+
+- **Backend**: Node.js 18+, Express, Claude API (`@anthropic-ai/sdk`)
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
+- **Exchanges**: Binance REST API, Coinbase Advanced Trade API
+- **Data**: CoinGecko, CryptoPanic, Mempool.space, Fear & Greed Index
+- **Security**: Client-side HMAC-SHA256, sessionStorage credentials
+- **Deployment**: Docker Compose (backend), Vercel (frontend)
+
+---
+
+**Built with 25 autonomous agents. Every decision auditable. Every trade with reasoning.**
