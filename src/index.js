@@ -647,6 +647,64 @@ app.listen(PORT, () => {
   setInterval(metaOrchestratorLoop, 30000);
   setTimeout(metaOrchestratorLoop, 1000);
 
+  // ─── MULTI-TIMEFRAME TRADING ENGINE ENDPOINTS ───
+  console.log('[MULTI-TF] Initializing multi-timeframe system (1m, 5m, 15m, 30m)...');
+  const mte = require('./services/multiTimeframeTradingEngine');
+  mte.initializeAccounts();
+
+  // Get all available pairs
+  app.get('/api/multi-tf/pairs', (req, res) => {
+    const pairs = mte.getAllPairs();
+    res.json({
+      status: 'OK',
+      data: pairs,
+      message: `${pairs.total} trading pairs available globally`
+    });
+  });
+
+  // Get market snapshot (all pairs, all timeframes)
+  app.get('/api/multi-tf/market-snapshot', (req, res) => {
+    const snapshot = mte.getMarketSnapshot();
+    res.json({ status: 'OK', data: snapshot });
+  });
+
+  // Get consensus for a pair across all timeframes
+  app.get('/api/multi-tf/consensus/:pair', (req, res) => {
+    const consensus = mte.getConsensus(req.params.pair);
+    res.json({ status: 'OK', data: consensus });
+  });
+
+  // Get indicators for pair/timeframe
+  app.get('/api/multi-tf/indicators/:pair/:timeframe', (req, res) => {
+    const indicators = mte.calculateIndicators(req.params.pair, req.params.timeframe);
+    res.json({ status: indicators ? 'OK' : 'ERROR', data: indicators });
+  });
+
+  // Add candle data
+  app.post('/api/multi-tf/candle/:pair/:timeframe', (req, res) => {
+    mte.addCandle(req.params.pair, req.params.timeframe, req.body);
+    res.json({ status: 'OK', message: 'Candle added' });
+  });
+
+  // Get account stats for all timeframes
+  app.get('/api/multi-tf/accounts', (req, res) => {
+    const stats = mte.getAllAccountStats();
+    res.json({ status: 'OK', data: stats });
+  });
+
+  // Get account stats for specific timeframe
+  app.get('/api/multi-tf/account/:timeframe', (req, res) => {
+    const account = mte.getAccountInfo(req.params.timeframe);
+    res.json({ status: 'OK', data: account });
+  });
+
+  // Reset all accounts
+  app.post('/api/multi-tf/reset', (req, res) => {
+    const initialBalance = req.body.initialBalance || 10000;
+    mte.resetAllAccounts(initialBalance);
+    res.json({ status: 'OK', message: `All accounts reset to $${initialBalance}` });
+  });
+
   // ─── PROFESSIONAL TRADING ENGINE ENDPOINTS ───
   console.log('[PROFESSIONAL] Initializing professional trading system...');
 
