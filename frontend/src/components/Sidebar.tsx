@@ -33,7 +33,7 @@ export default function Sidebar() {
           </div>
           <div className="hidden lg:block">
             <div className="text-xs font-bold text-amber-400">CRYPTOBOT</div>
-            <div className="text-[9px] text-slate-500">25 Agent System</div>
+            <div className="text-[9px] text-slate-500">27 Agent System (Claude Opus)</div>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 """
-SUPERVISOR AGENT — Master orchestrator for all 25 trading + security agents.
+SUPERVISOR AGENT — Master orchestrator for all 27 trading + security agents.
 Weighted consensus voting, kill switch, and dynamic agent performance tracking.
 File: supervisor/supervisor_agent.py
 """
@@ -13,15 +13,15 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("supervisor")
 
 AGENTS = [
-    # Strategy Layer (6)
+    # Strategy Layer (8) - Includes 2 new Bitcoin predictors
     "trend", "momentum", "mean_reversion", "arbitrage", "breakout",
-    "indicator_master",
+    "indicator_master", "bitcoin_short_term", "bitcoin_multiframe",
     # Data & Risk Layer (5)
     "sentiment", "onchain", "risk", "portfolio", "orderbook",
     # Execution Layer (5)
     "order", "slippage", "stoploss", "fee", "defi",
-    # Intelligence Layer (6)
-    "ml", "backtest", "alert", "audit", "rebalance", "news",
+    # Intelligence Layer (7) - Pattern historian added
+    "ml", "backtest", "alert", "audit", "rebalance", "news", "pattern_historian",
     # Security Layer (3)
     "npm_security", "db_security", "code_security",
 ]
@@ -29,7 +29,7 @@ AGENTS = [
 # Strategy agents that participate in consensus voting
 STRATEGY_VOTERS = [
     "trend", "momentum", "mean_reversion", "arbitrage", "breakout",
-    "indicator_master",
+    "indicator_master", "bitcoin_short_term", "bitcoin_multiframe",
 ]
 
 
@@ -38,8 +38,10 @@ class SupervisorAgent:
         self.redis = None
         self.agent_reports: Dict[str, Any] = {}
         self.agent_weights: Dict[str, float] = {a: 1.0 for a in AGENTS}
-        # Indicator master starts with higher weight (it aggregates all indicators)
-        self.agent_weights["indicator_master"] = 1.5
+        # Special weight initialization for key agents
+        self.agent_weights["indicator_master"] = 1.5        # Aggregates all indicators
+        self.agent_weights["bitcoin_short_term"] = 1.3      # Short-term Bitcoin specialist
+        self.agent_weights["bitcoin_multiframe"] = 1.4      # Multi-timeframe specialist
         self.master_pnl = 0.0
         self.kill_switch = False
         self.MAX_DRAWDOWN = 0.05  # 5% kill switch threshold
