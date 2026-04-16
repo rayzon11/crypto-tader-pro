@@ -646,6 +646,95 @@ app.listen(PORT, () => {
   // Run meta orchestrator every 30 seconds
   setInterval(metaOrchestratorLoop, 30000);
   setTimeout(metaOrchestratorLoop, 1000);
+
+  // ─── PROFESSIONAL TRADING ENGINE ENDPOINTS ───
+  console.log('[PROFESSIONAL] Initializing professional trading system...');
+
+  // Get account info
+  app.get('/api/professional/account', (req, res) => {
+    const accountInfo = require('./services/professionalTradingEngine').getAccountInfo();
+    res.json({ status: 'OK', data: accountInfo });
+  });
+
+  // Get equity chart
+  app.get('/api/professional/equity-chart', (req, res) => {
+    const chart = require('./services/professionalTradingEngine').getEquityChart();
+    res.json({ status: 'OK', data: chart });
+  });
+
+  // Create order (MARKET, LIMIT, STOP)
+  app.post('/api/professional/order', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const result = engine.createOrder(req.body);
+    res.json(result);
+  });
+
+  // Execute limit order
+  app.post('/api/professional/order/:orderId/execute', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const result = engine.executeLimitOrder(req.params.orderId);
+    res.json(result);
+  });
+
+  // Get open positions
+  app.get('/api/professional/positions', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const positions = engine.getOpenPositions();
+    res.json({ status: 'OK', data: positions, count: positions.length });
+  });
+
+  // Close position
+  app.post('/api/professional/position/:positionId/close', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const { exitPrice, reason } = req.body;
+    const result = engine.closePosition(req.params.positionId, exitPrice, reason);
+    res.json(result);
+  });
+
+  // Update market data
+  app.post('/api/professional/market/:symbol', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const { price, bid, ask, spread } = req.body;
+    const result = engine.updateMarketData(req.params.symbol, price, bid, ask, spread);
+    // Also update open positions
+    engine.updatePositionPrices(result);
+    res.json({ status: 'OK', data: result });
+  });
+
+  // Get trade history
+  app.get('/api/professional/trades', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const history = engine.getTradeHistory();
+    res.json({ status: 'OK', data: history });
+  });
+
+  // Get risk status
+  app.get('/api/professional/risk', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const risk = engine.getRiskStatus();
+    res.json({ status: 'OK', data: risk });
+  });
+
+  // Set risk limits
+  app.post('/api/professional/risk-limits', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const result = engine.setRiskLimits(req.body);
+    res.json(result);
+  });
+
+  // Record history snapshot
+  app.post('/api/professional/record-snapshot', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    engine.recordHistory();
+    res.json({ status: 'OK', message: 'Snapshot recorded' });
+  });
+
+  // Reset account
+  app.post('/api/professional/reset', (req, res) => {
+    const engine = require('./services/professionalTradingEngine');
+    const result = engine.resetAccount();
+    res.json(result);
+  });
 });
 
 module.exports = app;
