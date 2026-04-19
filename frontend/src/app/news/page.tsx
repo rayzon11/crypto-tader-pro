@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import LiveTicker from "@/components/LiveTicker";
 import NewsFeed, { type NewsFeedItem } from "@/components/NewsFeed";
+import NewsWire from "@/components/NewsWire";
+import CryptoIPOPanel from "@/components/CryptoIPOPanel";
 import { fetchCryptoNews, fetchFearGreed, fetchTrendingCoins, loadApiKeys } from "@/lib/api";
 import { generateNewsItems } from "@/lib/mockData";
 
@@ -120,6 +122,12 @@ export default function NewsPage() {
               <span className="text-[10px] text-slate-500 animate-pulse">Fetching...</span>
             )}
           </div>
+        </div>
+
+        {/* LIVE RSS WIRE + IPO ANALYST — real-time, no backend required */}
+        <div className="space-y-4 mb-6">
+          <NewsWire max={60} />
+          <CryptoIPOPanel />
         </div>
 
         {/* Stats Row */}

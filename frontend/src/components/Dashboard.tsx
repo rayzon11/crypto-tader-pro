@@ -34,16 +34,10 @@ const TIER_ICONS: Record<string, string> = {
 
 export default function Dashboard() {
   const [tick, setTick] = useState(0);
-  const [state, setState] = useState<ReturnType<typeof generateMasterState> | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // Initialize state synchronously so SSR + first client render show the dashboard immediately
+  const [state, setState] = useState<ReturnType<typeof generateMasterState>>(() => generateMasterState(0));
 
   useEffect(() => {
-    setMounted(true);
-    setState(generateMasterState(0));
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
     const interval = setInterval(() => {
       setTick((t) => {
         const next = t + 1;
@@ -52,11 +46,7 @@ export default function Dashboard() {
       });
     }, 4000);
     return () => clearInterval(interval);
-  }, [mounted]);
-
-  if (!mounted || !state) {
-    return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">Loading Command Center...</div>;
-  }
+  }, []);
 
   return (
     <div className="min-h-screen text-slate-200">

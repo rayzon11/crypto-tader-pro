@@ -1,231 +1,154 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import LiveTicker from "@/components/LiveTicker";
-import { PORTFOLIO_ALLOCATION, generateEquityCurve } from "@/lib/mockData";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  LineChart,
-  Line,
-} from "recharts";
+import { useEffect, useState } from "react";
+import { useBinanceChart } from "@/hooks/useBinanceChart";
+
+const API = "http://localhost:3002";
+const n = (x: any, d = 2) => (typeof x === "number" && Number.isFinite(x) ? x.toFixed(d) : "0.00");
+const usd = (x: any, d = 2) => `$${n(x, d)}`;
+
+async function getJson(path: string) {
+  try { const r = await fetch(`${API}${path}`); return await r.json(); } catch { return null; }
+}
+
+function MiniPrice({ base, quote }: { base: string; quote: string }) {
+  const { price, change24h } = useBinanceChart(`${base}/${quote}`, "1m");
+  return (
+    <div className="text-right">
+      <div className="font-bold tabular-nums text-white">{price ? usd(price) : "—"}</div>
+      {change24h != null && (
+        <div className={`text-[10px] ${change24h >= 0 ? "text-green-400" : "text-red-400"}`}>
+          {change24h >= 0 ? "+" : ""}{n(change24h)}%
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PortfolioPage() {
-  const [equityCurve, setEquityCurve] = useState<{ date: string; equity: number; drawdown: number }[]>([]);
-  const [days, setDays] = useState(30);
+  const [spot, setSpot] = useState<any>(null);
+  const [fut, setFut] = useState<any>(null);
 
   useEffect(() => {
-    setEquityCurve(generateEquityCurve(days));
-  }, [days]);
+    const load = async () => {
+      const [s, f] = await Promise.all([
+        getJson("/api/trader/status"),
+        getJson("/api/futures/status"),
+      ]);
+      if (s) setSpot(s);
+      if (f) setFut(f);
+    };
+    load();
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, []);
 
-  const totalValue = PORTFOLIO_ALLOCATION.reduce((sum, a) => sum + a.value, 0);
-  const currentEquity = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : 50000;
-  const startEquity = equityCurve.length > 0 ? equityCurve[0].equity : 50000;
-  const totalReturn = ((currentEquity - startEquity) / startEquity) * 100;
-  const maxDrawdown = equityCurve.length > 0 ? Math.max(...equityCurve.map((p) => p.drawdown)) : 0;
+  const spotStats = spot?.stats ?? {};
+  const futStats = fut?.stats ?? {};
+  const spotEquity = (spotStats.balance ?? 0) + (spotStats.unrealizedPnl ?? 0);
+  const futEquity = futStats.equity ?? 0;
+  const totalEquity = spotEquity + futEquity;
+  const totalInitial = (spotStats.initialBalance ?? 0) + (futStats.initialBalance ?? 0);
+  const totalPnl = totalEquity - totalInitial;
+  const totalPnlPct = totalInitial ? (totalPnl / totalInitial) * 100 : 0;
+
+  const allPositions = [
+    ...(spot?.positions ?? []).map((p: any) => ({ ...p, market: "SPOT" })),
+    ...(fut?.positions ?? []).map((p: any) => ({ ...p, market: "PERP" })),
+  ];
 
   return (
-    <div className="min-h-screen text-slate-200">
-      <LiveTicker />
-      <div className="p-4 lg:p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold">
-            <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Portfolio Overview
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">Asset allocation, equity curve, and performance metrics</p>
+    <div className="min-h-screen bg-black text-green-400 p-4 space-y-4" style={{ fontFamily: "Consolas, 'Courier New', monospace" }}>
+      <div className="border border-green-500/40 rounded p-3 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] tracking-[0.3em] opacity-70">PORTFOLIO · REAL-TIME MARK-TO-MARKET</div>
+          <div className="text-2xl font-bold text-white mt-1">{usd(totalEquity)}</div>
+          <div className={`text-sm ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {totalPnl >= 0 ? "+" : ""}{usd(totalPnl)} ({totalPnl >= 0 ? "+" : ""}{n(totalPnlPct)}%) since inception
+          </div>
+        </div>
+        <div className="flex gap-6 text-xs">
+          <Stat label="Spot Equity"    value={usd(spotEquity)} cls="text-cyan-300" />
+          <Stat label="Futures Equity" value={usd(futEquity)}  cls="text-orange-300" />
+          <Stat label="Open Positions" value={String(allPositions.length)} />
+          <Stat label="Realized P&L"   value={`${((spotStats.realizedPnl ?? 0) + (futStats.realizedPnl ?? 0)) >= 0 ? "+" : ""}${usd((spotStats.realizedPnl ?? 0) + (futStats.realizedPnl ?? 0))}`} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="border border-cyan-500/40 rounded p-3">
+          <div className="text-xs font-bold tracking-widest mb-2 text-cyan-400">◆ SPOT TRADING ACCOUNT</div>
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <Stat label="Balance"       value={usd(spotStats.balance)} />
+            <Stat label="Unrealized"    value={`${(spotStats.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${usd(spotStats.unrealizedPnl)}`} cls={(spotStats.unrealizedPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"} />
+            <Stat label="Total P&L"     value={`${(spotStats.totalPnl ?? 0) >= 0 ? "+" : ""}${usd(spotStats.totalPnl)}`} cls={(spotStats.totalPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"} />
+            <Stat label="Win Rate"      value={`${n(spotStats.winRate, 1)}%`} />
+            <Stat label="Trades"        value={`${spotStats.wins ?? 0}W / ${spotStats.losses ?? 0}L`} />
+            <Stat label="Status"        value={spotStats.running ? "● LIVE" : "○ STOPPED"} cls={spotStats.running ? "text-green-400" : "text-slate-500"} />
+          </div>
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          {[
-            { label: "Total Portfolio", value: `$${totalValue.toLocaleString()}`, color: "text-white", bg: "from-blue-500/10" },
-            { label: "Current Equity", value: `$${currentEquity.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: "text-blue-400", bg: "from-blue-500/10" },
-            { label: `${days}d Return`, value: `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`, color: totalReturn >= 0 ? "text-green-400" : "text-red-400", bg: totalReturn >= 0 ? "from-green-500/10" : "from-red-500/10" },
-            { label: "Max Drawdown", value: `-${maxDrawdown.toFixed(2)}%`, color: "text-red-400", bg: "from-red-500/10" },
-          ].map((stat, i) => (
-            <div key={stat.label} className={`animate-fadeIn delay-${i + 1} card-hover bg-gradient-to-br ${stat.bg} to-transparent rounded-xl border border-slate-800/50 px-4 py-4`}>
-              <div className="text-[11px] text-slate-500 uppercase tracking-wider mb-1">{stat.label}</div>
-              <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
+        <div className="border border-orange-500/40 rounded p-3">
+          <div className="text-xs font-bold tracking-widest mb-2 text-orange-400">⚡ FUTURES (PERPETUAL) ACCOUNT</div>
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <Stat label="Equity"        value={usd(futStats.equity)} />
+            <Stat label="Free"          value={usd(futStats.freeBalance)} />
+            <Stat label="Locked Margin" value={usd(futStats.lockedMargin)} cls="text-yellow-300" />
+            <Stat label="Unrealized"    value={`${(futStats.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${usd(futStats.unrealizedPnl)}`} cls={(futStats.unrealizedPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"} />
+            <Stat label="Funding Paid"  value={usd(futStats.fundingPaid, 4)} cls="opacity-70" />
+            <Stat label="Win Rate"      value={`${n(futStats.winRate, 1)}%`} />
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-green-500/40 rounded p-3">
+        <div className="text-xs font-bold tracking-widest mb-2 opacity-80">📍 OPEN POSITIONS ({allPositions.length})</div>
+        <table className="w-full text-[11px] font-mono">
+          <thead className="text-green-400/70 border-b border-green-500/20">
+            <tr><Th>Market</Th><Th>Symbol</Th><Th>Side</Th><Th>Lev</Th><Th>Entry</Th><Th>Mark</Th><Th>Liq</Th><Th>Size</Th><Th>Notional</Th><Th>Unrealized</Th><Th>%</Th></tr>
+          </thead>
+          <tbody>
+            {allPositions.map((p: any, i: number) => (
+              <tr key={`${p.market}-${p.id}-${i}`} className="border-b border-green-500/10">
+                <Td><span className={p.market === "SPOT" ? "text-cyan-400" : "text-orange-400"}>{p.market}</span></Td>
+                <Td>{p.symbol}</Td>
+                <Td><span className={p.side === "LONG" ? "text-green-400" : "text-red-400"}>{p.side}</span></Td>
+                <Td className="text-orange-400">{p.leverage ? `${p.leverage}x` : "1x"}</Td>
+                <Td>{usd(p.entry)}</Td>
+                <Td className="text-white">{usd(p.currentPrice)}</Td>
+                <Td className="text-red-400">{p.liqPrice ? usd(p.liqPrice) : "—"}</Td>
+                <Td>{n(p.size, 4)}</Td>
+                <Td>{usd(p.notional ?? (p.entry ?? 0) * (p.size ?? 0))}</Td>
+                <Td className={(p.unrealizedPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>
+                  {(p.unrealizedPnl ?? 0) >= 0 ? "+" : ""}{usd(p.unrealizedPnl)}
+                </Td>
+                <Td className={(p.unrealizedPct ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>
+                  {(p.unrealizedPct ?? 0) >= 0 ? "+" : ""}{n(p.unrealizedPct)}%
+                </Td>
+              </tr>
+            ))}
+            {allPositions.length === 0 && <tr><td colSpan={11} className="py-3 text-center opacity-50">No open positions across spot or futures</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border border-green-500/40 rounded p-3">
+        <div className="text-xs font-bold tracking-widest mb-2 opacity-80">📈 WATCHLIST · LIVE BINANCE PRICES</div>
+        <div className="grid grid-cols-4 gap-3">
+          {[["BTC","USDT"],["ETH","USDT"],["SOL","USDT"],["XRP","USDT"],["BNB","USDT"],["ADA","USDT"],["DOGE","USDT"],["AVAX","USDT"]].map(([b,q]) => (
+            <div key={b} className="flex justify-between items-center p-2 rounded border border-green-500/20 bg-black/40">
+              <div className="text-sm font-bold">{b}/{q}</div>
+              <MiniPrice base={b} quote={q} />
             </div>
           ))}
-        </div>
-
-        {/* Allocation + Equity Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          {/* Pie Chart */}
-          <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
-            <h3 className="text-sm font-bold text-slate-300 mb-3">Asset Allocation</h3>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={PORTFOLIO_ALLOCATION}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="allocation"
-                  >
-                    {PORTFOLIO_ALLOCATION.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} stroke="transparent" />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      borderRadius: "8px",
-                      fontSize: "11px",
-                    }}
-                    formatter={(value: number, name: string) => [`${value}%`, name]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex flex-wrap gap-3 mt-2 justify-center">
-              {PORTFOLIO_ALLOCATION.map((a) => (
-                <span key={a.name} className="flex items-center gap-1.5 text-[10px]">
-                  <span className="w-2 h-2 rounded-full" style={{ background: a.color }} />
-                  <span className="text-slate-400">{a.name} {a.allocation}%</span>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Equity Curve */}
-          <div className="lg:col-span-2 rounded-xl bg-slate-800/30 border border-slate-700/30 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-300">Equity Curve</h3>
-              <div className="flex gap-1">
-                {[7, 14, 30, 90].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDays(d)}
-                    className={`px-2 py-0.5 rounded text-[10px] ${
-                      days === d ? "bg-purple-500/20 text-purple-400" : "text-slate-500 hover:text-slate-300"
-                    }`}
-                  >
-                    {d}d
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={equityCurve}>
-                  <defs>
-                    <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="date"
-                    stroke="#334155"
-                    tick={{ fontSize: 10, fill: "#64748b" }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    stroke="#334155"
-                    tick={{ fontSize: 10, fill: "#64748b" }}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      borderRadius: "8px",
-                      fontSize: "11px",
-                    }}
-                    formatter={(value: number) => [`$${value.toLocaleString()}`, "Equity"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="equity"
-                    stroke="#a855f7"
-                    strokeWidth={2}
-                    fill="url(#equityGrad)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* Drawdown Chart */}
-        <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-4 mb-6">
-          <h3 className="text-sm font-bold text-slate-300 mb-3">Drawdown</h3>
-          <div className="h-[120px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={equityCurve}>
-                <XAxis dataKey="date" stroke="#334155" tick={{ fontSize: 10, fill: "#64748b" }} interval="preserveStartEnd" />
-                <YAxis stroke="#334155" tick={{ fontSize: 10, fill: "#64748b" }} tickFormatter={(v) => `-${v}%`} />
-                <Tooltip
-                  contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", fontSize: "11px" }}
-                  formatter={(value: number) => [`-${value.toFixed(2)}%`, "Drawdown"]}
-                />
-                <Line type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={1.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Holdings Table */}
-        <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-700/30">
-            <h3 className="text-sm font-bold text-slate-300">Holdings</h3>
-          </div>
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="text-slate-500 border-b border-slate-700/20">
-                <th className="text-left px-4 py-2 font-medium">Asset</th>
-                <th className="text-right px-4 py-2 font-medium">Allocation</th>
-                <th className="text-right px-4 py-2 font-medium">Value</th>
-                <th className="text-right px-4 py-2 font-medium">Target</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PORTFOLIO_ALLOCATION.map((asset) => {
-                const drift = Math.abs(asset.allocation - asset.allocation) < 2;
-                return (
-                  <tr key={asset.name} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ background: asset.color }} />
-                        <span className="font-medium text-slate-300">{asset.name}/USDT</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-300">{asset.allocation}%</td>
-                    <td className="px-4 py-3 text-right text-slate-300">${asset.value.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right text-slate-400">{asset.allocation}%</td>
-                    <td className="px-4 py-3">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-green-500/10 text-green-400">
-                        On Target
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-8 text-center text-[10px] text-slate-700 pb-4">
-          Portfolio values are simulated for demo purposes. Paper trading mode active.
         </div>
       </div>
     </div>
   );
 }
+
+function Stat({ label, value, cls = "text-green-400" }: { label: string; value: string; cls?: string }) {
+  return <div><div className="text-[10px] opacity-60 uppercase tracking-wider">{label}</div><div className={`font-bold ${cls}`}>{value}</div></div>;
+}
+function Th({ children }: any) { return <th className="py-1.5 px-2 text-left font-normal uppercase tracking-wider text-[10px]">{children}</th>; }
+function Td({ children, className = "" }: any) { return <td className={`py-1.5 px-2 ${className}`}>{children}</td>; }

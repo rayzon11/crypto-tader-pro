@@ -1,250 +1,197 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import LiveTicker from "@/components/LiveTicker";
-import { AGENTS, type AgentProfile } from "@/lib/agents";
+import { useEffect, useMemo, useState } from "react";
 
-interface AgentDailyReport {
-  agent: AgentProfile;
-  trades: number;
-  wins: number;
-  losses: number;
-  pnl: number;
-  bestTrade: { pair: string; pnl: number };
-  worstTrade: { pair: string; pnl: number };
-  learnings: string;
-  strategyAdjustment: string;
-  confidenceChange: number;
-  riskEvents: number;
-}
+const API = "http://localhost:3002";
+const n = (x: any, d = 2) => (typeof x === "number" && Number.isFinite(x) ? x.toFixed(d) : "0.00");
+const usd = (x: any, d = 2) => `$${n(x, d)}`;
 
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
-
-function generateDailyReports(): AgentDailyReport[] {
-  return AGENTS.filter((a) => a.tier !== "Security").map((agent, i) => {
-    const trades = Math.floor(5 + seededRandom(i * 17) * 25);
-    const winRate = agent.winRate + (seededRandom(i * 23) - 0.5) * 0.1;
-    const wins = Math.floor(trades * Math.max(0.3, Math.min(0.95, winRate)));
-    const losses = trades - wins;
-    const pnl = (seededRandom(i * 29) - 0.35) * 150;
-    const pairs = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "AVAX/USDT"];
-
-    const LEARNINGS = [
-      "EMA crossover signals are more reliable in trending markets. Increased weight on ADX filter.",
-      "RSI divergence on 1H timeframe predicted 3 of 4 reversals correctly today.",
-      "Bollinger Band squeeze preceded the largest move of the day. Adding squeeze detection.",
-      "Cross-exchange spread narrowed faster than expected. Reducing latency threshold.",
-      "Volume-confirmed breakouts had 80% success rate today vs 60% for unconfirmed.",
-      "LSTM model accuracy improved to 74% after retraining with latest 200 trades.",
-      "News sentiment correlation with price was stronger than usual today (+0.82).",
-      "Portfolio rebalancing reduced drawdown by 0.3% compared to static allocation.",
-      "Order book imbalance was a strong predictor of short-term direction today.",
-      "Trailing stop saved 2.1% on the largest losing trade. Tightening to 1.8%.",
-      "Composite indicator signal had 85% accuracy when ADX > 25. Noted for weights.",
-      "Fear & Greed shift from 65 to 72 preceded the afternoon rally by 45 minutes.",
-    ];
-
-    const ADJUSTMENTS = [
-      "Increasing EMA weight in trending conditions by 5%.",
-      "Tightening stop loss from 3% to 2.5% based on recent volatility.",
-      "Adding 15-minute confirmation delay before executing STRONG signals.",
-      "Shifting allocation toward ETH based on superior risk-adjusted returns.",
-      "Expanding to 3-exchange routing for orders above $5,000.",
-      "Reducing position size during high-volatility hours (10am-2pm UTC).",
-      "Increasing news sentiment weight in consensus voting by 10%.",
-      "No adjustment needed — current strategy is performing within expectations.",
-    ];
-
-    return {
-      agent,
-      trades,
-      wins,
-      losses,
-      pnl: Math.round(pnl * 100) / 100,
-      bestTrade: {
-        pair: pairs[Math.floor(seededRandom(i * 31) * pairs.length)],
-        pnl: Math.round((20 + seededRandom(i * 37) * 80) * 100) / 100,
-      },
-      worstTrade: {
-        pair: pairs[Math.floor(seededRandom(i * 41) * pairs.length)],
-        pnl: Math.round((-10 - seededRandom(i * 43) * 50) * 100) / 100,
-      },
-      learnings: LEARNINGS[i % LEARNINGS.length],
-      strategyAdjustment: ADJUSTMENTS[i % ADJUSTMENTS.length],
-      confidenceChange: Math.round((seededRandom(i * 47) - 0.4) * 10) / 10,
-      riskEvents: Math.floor(seededRandom(i * 53) * 3),
-    };
-  });
+async function getJson(path: string) {
+  try { const r = await fetch(`${API}${path}`); return await r.json(); } catch { return null; }
 }
 
 export default function ReportsPage() {
-  const [reports, setReports] = useState<AgentDailyReport[]>([]);
-  const [selectedTier, setSelectedTier] = useState("All");
-  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [spot, setSpot] = useState<any>(null);
+  const [fut, setFut] = useState<any>(null);
+  const [agents, setAgents] = useState<any[]>([]);
 
   useEffect(() => {
-    setReports(generateDailyReports());
+    const load = async () => {
+      const [s, f, a] = await Promise.all([
+        getJson("/api/trader/status"),
+        getJson("/api/futures/status"),
+        getJson("/api/agents"),
+      ]);
+      if (s) setSpot(s);
+      if (f) setFut(f);
+      if (Array.isArray(a)) setAgents(a);
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
   }, []);
 
-  const tiers = ["All", "Strategy", "Data+Risk", "Execution", "Intelligence"];
-  const filtered = selectedTier === "All" ? reports : reports.filter((r) => r.agent.tier === selectedTier);
+  const allTrades = useMemo(() => [
+    ...((spot?.trades ?? []).map((t: any) => ({ ...t, market: "SPOT" }))),
+    ...((fut?.trades ?? []).map((t: any) => ({ ...t, market: "PERP" }))),
+  ].sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)), [spot, fut]);
 
-  const totalPnl = reports.reduce((s, r) => s + r.pnl, 0);
-  const totalTrades = reports.reduce((s, r) => s + r.trades, 0);
-  const totalWins = reports.reduce((s, r) => s + r.wins, 0);
-  const overallWinRate = totalTrades > 0 ? Math.round((totalWins / totalTrades) * 1000) / 10 : 0;
+  // ── Performance metrics from real trades ──
+  const metrics = useMemo(() => {
+    if (allTrades.length === 0) {
+      return { total: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, avgWin: 0, avgLoss: 0, bestTrade: 0, worstTrade: 0, profitFactor: 0, sharpe: 0, avgDuration: 0 };
+    }
+    const wins = allTrades.filter((t: any) => t.won);
+    const losses = allTrades.filter((t: any) => !t.won);
+    const winSum = wins.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    const lossSum = Math.abs(losses.reduce((s, t) => s + (t.pnl ?? 0), 0));
+    const totalPnl = allTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    const pnls = allTrades.map((t: any) => t.pnl ?? 0);
+    const mean = pnls.reduce((s, x) => s + x, 0) / pnls.length;
+    const variance = pnls.reduce((s, x) => s + (x - mean) ** 2, 0) / pnls.length;
+    const std = Math.sqrt(variance);
+    const sharpe = std > 0 ? (mean / std) * Math.sqrt(252) : 0;
+    return {
+      total: allTrades.length,
+      wins: wins.length,
+      losses: losses.length,
+      winRate: (wins.length / allTrades.length) * 100,
+      totalPnl,
+      avgWin: wins.length ? winSum / wins.length : 0,
+      avgLoss: losses.length ? -lossSum / losses.length : 0,
+      bestTrade: Math.max(...pnls),
+      worstTrade: Math.min(...pnls),
+      profitFactor: lossSum ? winSum / lossSum : winSum > 0 ? Infinity : 0,
+      sharpe,
+      avgDuration: allTrades.reduce((s, t) => s + (t.durationMs ?? 0), 0) / allTrades.length / 1000,
+    };
+  }, [allTrades]);
+
+  // Top performing agents (by pnl)
+  const topAgents = [...agents].sort((a, b) => (b.pnl ?? 0) - (a.pnl ?? 0)).slice(0, 10);
+
+  const spotStats = spot?.stats ?? {};
+  const futStats = fut?.stats ?? {};
 
   return (
-    <div className="min-h-screen text-slate-200">
-      <LiveTicker />
-      <div className="p-4 lg:p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">
-              <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-                Daily Reports
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">End-of-day performance reports from all 25 agents</p>
-          </div>
-          <div className="text-[10px] text-slate-500">
-            Report Date: {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          </div>
+    <div className="min-h-screen bg-black text-green-400 p-4 space-y-4" style={{ fontFamily: "Consolas, 'Courier New', monospace" }}>
+      <div className="border border-green-500/40 rounded p-3">
+        <div className="text-[10px] tracking-[0.3em] opacity-70">PERFORMANCE REPORTS · COMPUTED FROM LIVE TRADE HISTORY</div>
+        <div className="text-xl font-bold mt-1">{allTrades.length} total trades across spot + futures</div>
+      </div>
+
+      {/* KPI CARDS */}
+      <div className="grid grid-cols-6 gap-3">
+        <KPI label="Total P&L"       value={`${metrics.totalPnl >= 0 ? "+" : ""}${usd(metrics.totalPnl)}`} cls={metrics.totalPnl >= 0 ? "text-green-400" : "text-red-400"} big />
+        <KPI label="Win Rate"        value={`${n(metrics.winRate, 1)}%`} cls="text-cyan-300" />
+        <KPI label="Profit Factor"   value={metrics.profitFactor === Infinity ? "∞" : n(metrics.profitFactor, 2)} cls={metrics.profitFactor >= 1.5 ? "text-green-400" : "text-yellow-300"} />
+        <KPI label="Sharpe (ann.)"   value={n(metrics.sharpe, 2)} cls={metrics.sharpe >= 1 ? "text-green-400" : "text-yellow-300"} />
+        <KPI label="Avg Win"         value={usd(metrics.avgWin)} cls="text-green-400" />
+        <KPI label="Avg Loss"        value={usd(metrics.avgLoss)} cls="text-red-400" />
+        <KPI label="Best Trade"      value={usd(metrics.bestTrade)} cls="text-green-400" />
+        <KPI label="Worst Trade"     value={usd(metrics.worstTrade)} cls="text-red-400" />
+        <KPI label="Avg Duration"    value={`${n(metrics.avgDuration, 0)}s`} />
+        <KPI label="Wins"            value={String(metrics.wins)} cls="text-green-400" />
+        <KPI label="Losses"          value={String(metrics.losses)} cls="text-red-400" />
+        <KPI label="Expectancy"      value={usd(metrics.total ? metrics.totalPnl / metrics.total : 0)} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* ACCOUNT BREAKDOWN */}
+        <div className="border border-green-500/40 rounded p-3">
+          <div className="text-xs font-bold tracking-widest mb-2 opacity-80">◆ ACCOUNT PERFORMANCE BREAKDOWN</div>
+          <table className="w-full text-[11px] font-mono">
+            <thead className="border-b border-green-500/20 text-green-400/70">
+              <tr><Th>Account</Th><Th>Equity</Th><Th>P&L</Th><Th>%</Th><Th>Trades</Th><Th>Win%</Th></tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-green-500/10">
+                <Td className="text-cyan-400 font-bold">SPOT</Td>
+                <Td>{usd((spotStats.balance ?? 0) + (spotStats.unrealizedPnl ?? 0))}</Td>
+                <Td className={(spotStats.totalPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>{(spotStats.totalPnl ?? 0) >= 0 ? "+" : ""}{usd(spotStats.totalPnl)}</Td>
+                <Td className={(spotStats.totalPnlPct ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>{n(spotStats.totalPnlPct)}%</Td>
+                <Td>{spotStats.closedTrades ?? 0}</Td>
+                <Td>{n(spotStats.winRate, 1)}%</Td>
+              </tr>
+              <tr>
+                <Td className="text-orange-400 font-bold">FUTURES</Td>
+                <Td>{usd(futStats.equity)}</Td>
+                <Td className={(futStats.totalPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>{(futStats.totalPnl ?? 0) >= 0 ? "+" : ""}{usd(futStats.totalPnl)}</Td>
+                <Td className={(futStats.totalPnlPct ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>{n(futStats.totalPnlPct)}%</Td>
+                <Td>{futStats.closedTrades ?? 0}</Td>
+                <Td>{n(futStats.winRate, 1)}%</Td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/30">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">Total P&L</div>
-            <div className={`text-xl font-bold mt-1 ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(2)}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/30">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">Total Trades</div>
-            <div className="text-xl font-bold text-white mt-1">{totalTrades}</div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/30">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">Win Rate</div>
-            <div className="text-xl font-bold text-amber-400 mt-1">{overallWinRate}%</div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/30">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">Active Agents</div>
-            <div className="text-xl font-bold text-white mt-1">{reports.length}/22</div>
-          </div>
+        {/* TOP AGENTS */}
+        <div className="border border-green-500/40 rounded p-3">
+          <div className="text-xs font-bold tracking-widest mb-2 opacity-80">🏆 TOP 10 AGENTS (BY P&L · OF 27)</div>
+          <table className="w-full text-[11px] font-mono">
+            <thead className="border-b border-green-500/20 text-green-400/70">
+              <tr><Th>Rank</Th><Th>Agent</Th><Th>Tier</Th><Th>Decisions</Th><Th>Trades</Th><Th>Win%</Th><Th>P&L</Th></tr>
+            </thead>
+            <tbody>
+              {topAgents.map((a: any, i: number) => (
+                <tr key={a.name} className="border-b border-green-500/10">
+                  <Td className="opacity-60">#{i + 1}</Td>
+                  <Td className="font-bold text-white">{a.name}</Td>
+                  <Td className="text-[10px] opacity-70">{a.tier}</Td>
+                  <Td>{a.totalDecisions ?? 0}</Td>
+                  <Td>{a.totalTrades ?? 0}</Td>
+                  <Td>{n((a.winRate ?? 0) * 100, 1)}%</Td>
+                  <Td className={(a.pnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"}>{(a.pnl ?? 0) >= 0 ? "+" : ""}{usd(a.pnl)}</Td>
+                </tr>
+              ))}
+              {topAgents.length === 0 && <tr><td colSpan={7} className="py-3 text-center opacity-50">Waiting for agent activity…</td></tr>}
+            </tbody>
+          </table>
         </div>
+      </div>
 
-        {/* Tier Filter */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-          {tiers.map((tier) => (
-            <button
-              key={tier}
-              onClick={() => setSelectedTier(tier)}
-              className={`px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-                selectedTier === tier
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  : "bg-slate-800/50 text-slate-400 border border-slate-700/30 hover:bg-slate-800"
-              }`}
-            >
-              {tier}
-            </button>
-          ))}
-        </div>
-
-        {/* Agent Reports */}
-        <div className="space-y-3">
-          {filtered.map((report) => {
-            const expanded = expandedAgent === report.agent.name;
-            const winRate = report.trades > 0 ? Math.round((report.wins / report.trades) * 1000) / 10 : 0;
-            return (
-              <div
-                key={report.agent.name}
-                className="rounded-xl bg-slate-800/30 border border-slate-700/30 overflow-hidden"
-              >
-                <button
-                  onClick={() => setExpandedAgent(expanded ? null : report.agent.name)}
-                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/20 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{report.agent.avatar}</span>
-                    <div className="text-left">
-                      <div className="text-sm font-bold text-slate-200">{report.agent.displayName}</div>
-                      <div className="text-[10px] text-slate-500">{report.agent.specialty} | Level {report.agent.level}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-right">
-                    <div>
-                      <div className={`text-sm font-bold ${report.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {report.pnl >= 0 ? "+" : ""}${report.pnl.toFixed(2)}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{report.trades} trades | {winRate}% WR</div>
-                    </div>
-                    <svg
-                      className={`w-4 h-4 text-slate-500 transition-transform ${expanded ? "rotate-180" : ""}`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </button>
-
-                {expanded && (
-                  <div className="px-4 pb-4 border-t border-slate-700/20">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3 mb-4">
-                      <div className="p-2 rounded-lg bg-slate-900/50">
-                        <div className="text-[9px] text-slate-500">Wins / Losses</div>
-                        <div className="text-sm font-bold text-slate-200">{report.wins}W / {report.losses}L</div>
-                      </div>
-                      <div className="p-2 rounded-lg bg-green-500/5 border border-green-500/10">
-                        <div className="text-[9px] text-green-400">Best Trade</div>
-                        <div className="text-sm font-bold text-green-400">+${report.bestTrade.pnl.toFixed(2)}</div>
-                        <div className="text-[9px] text-slate-500">{report.bestTrade.pair}</div>
-                      </div>
-                      <div className="p-2 rounded-lg bg-red-500/5 border border-red-500/10">
-                        <div className="text-[9px] text-red-400">Worst Trade</div>
-                        <div className="text-sm font-bold text-red-400">${report.worstTrade.pnl.toFixed(2)}</div>
-                        <div className="text-[9px] text-slate-500">{report.worstTrade.pair}</div>
-                      </div>
-                      <div className="p-2 rounded-lg bg-slate-900/50">
-                        <div className="text-[9px] text-slate-500">Confidence Change</div>
-                        <div className={`text-sm font-bold ${report.confidenceChange >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {report.confidenceChange >= 0 ? "+" : ""}{report.confidenceChange.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="p-3 rounded-lg bg-slate-900/30">
-                        <div className="text-[10px] text-emerald-400 font-bold mb-1">Learnings</div>
-                        <div className="text-[11px] text-slate-300">{report.learnings}</div>
-                      </div>
-                      <div className="p-3 rounded-lg bg-slate-900/30">
-                        <div className="text-[10px] text-amber-400 font-bold mb-1">Strategy Adjustment</div>
-                        <div className="text-[11px] text-slate-300">{report.strategyAdjustment}</div>
-                      </div>
-                      {report.riskEvents > 0 && (
-                        <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/10">
-                          <div className="text-[10px] text-red-400 font-bold mb-1">Risk Events: {report.riskEvents}</div>
-                          <div className="text-[11px] text-slate-400">Risk events were handled within parameters. No manual intervention required.</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-8 text-center text-[10px] text-slate-700 pb-4">
-          Reports generated automatically at market close. All data is from demo trading.
+      {/* FULL TRADE LEDGER */}
+      <div className="border border-green-500/40 rounded p-3">
+        <div className="text-xs font-bold tracking-widest mb-2 opacity-80">📋 FULL TRADE LEDGER ({allTrades.length})</div>
+        <div className="max-h-[500px] overflow-y-auto">
+          <table className="w-full text-[11px] font-mono">
+            <thead className="border-b border-green-500/20 text-green-400/70 sticky top-0 bg-black">
+              <tr><Th>#</Th><Th>Market</Th><Th>Symbol</Th><Th>Side</Th><Th>Lev</Th><Th>Entry</Th><Th>Exit</Th><Th>Size</Th><Th>P&L</Th><Th>%</Th><Th>Reason</Th><Th>Duration</Th><Th>Closed</Th></tr>
+            </thead>
+            <tbody>
+              {allTrades.map((t: any, i: number) => (
+                <tr key={`${t.market}-${t.id}-${i}`} className="border-b border-green-500/10">
+                  <Td className="opacity-60">{allTrades.length - i}</Td>
+                  <Td><span className={t.market === "SPOT" ? "text-cyan-400" : "text-orange-400"}>{t.market}</span></Td>
+                  <Td>{t.symbol}</Td>
+                  <Td><span className={t.side === "LONG" ? "text-green-400" : "text-red-400"}>{t.side}</span></Td>
+                  <Td className="text-orange-400">{t.leverage ? `${t.leverage}x` : "1x"}</Td>
+                  <Td>{usd(t.entry)}</Td>
+                  <Td>{usd(t.exit)}</Td>
+                  <Td>{n(t.size, 4)}</Td>
+                  <Td className={t.won ? "text-green-400" : "text-red-400"}>{(t.pnl ?? 0) >= 0 ? "+" : ""}{usd(t.pnl)}</Td>
+                  <Td className={t.won ? "text-green-400" : "text-red-400"}>{n(t.pnlPct)}%</Td>
+                  <Td className="opacity-70">{t.reason}</Td>
+                  <Td>{Math.floor((t.durationMs ?? 0) / 1000)}s</Td>
+                  <Td className="opacity-50 text-[9px]">{t.closedAt ? new Date(t.closedAt).toLocaleString() : "—"}</Td>
+                </tr>
+              ))}
+              {allTrades.length === 0 && <tr><td colSpan={13} className="py-4 text-center opacity-50">No closed trades yet — start the autonomous trader or place a futures order</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
 }
+
+function KPI({ label, value, cls = "text-green-400", big = false }: { label: string; value: string; cls?: string; big?: boolean }) {
+  return (
+    <div className="border border-green-500/30 rounded p-2 bg-black/40">
+      <div className="text-[9px] opacity-60 uppercase tracking-wider">{label}</div>
+      <div className={`font-bold ${big ? "text-xl" : "text-sm"} ${cls} tabular-nums`}>{value}</div>
+    </div>
+  );
+}
+function Th({ children }: any) { return <th className="py-1.5 px-2 text-left font-normal uppercase tracking-wider text-[10px]">{children}</th>; }
+function Td({ children, className = "" }: any) { return <td className={`py-1.5 px-2 ${className}`}>{children}</td>; }

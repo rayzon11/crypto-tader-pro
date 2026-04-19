@@ -4,7 +4,7 @@
 
 class MultiTimeframeTradingEngine {
   constructor() {
-    this.timeframes = ['1m', '5m', '15m', '30m'];
+    this.timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
     this.cryptoPairs = [
       'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT', 'XRP/USDT', 'DOGE/USDT',
       'ADA/USDT', 'LINK/USDT', 'MATIC/USDT', 'ARB/USDT', 'OP/USDT', 'LTC/USDT', 'BCH/USDT',
@@ -84,6 +84,12 @@ class MultiTimeframeTradingEngine {
       equity: this.equityPairs,
       total: this.cryptoPairs.length + this.forexPairs.length + this.equityPairs.length,
     };
+  }
+
+  // Get candles for a pair (across all timeframes or specific one)
+  getCandles(pair, timeframe = '1h') {
+    const key = `${pair}_${timeframe}`;
+    return this.candles[key] || [];
   }
 
   // Add candle data for a pair/timeframe

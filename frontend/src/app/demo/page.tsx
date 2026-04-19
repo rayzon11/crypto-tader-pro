@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import LiveTicker from "@/components/LiveTicker";
+import DemoFuturesPanel from "@/components/DemoFuturesPanel";
 import {
   loadWallet,
   saveWallet,
@@ -138,6 +139,8 @@ export default function DemoTradingPage() {
     <div className="min-h-screen text-slate-200">
       <LiveTicker />
       <div className="p-4 lg:p-6">
+        {/* Leveraged Futures (real backend, live Binance prices) */}
+        <DemoFuturesPanel />
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
           <div>

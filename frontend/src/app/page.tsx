@@ -1,7 +1,7 @@
 "use client";
 
-import Dashboard from "@/components/Dashboard";
+import Terminal from "@/components/Terminal";
 
 export default function Home() {
-  return <Dashboard />;
+  return <Terminal />;
 }

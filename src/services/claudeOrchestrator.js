@@ -3,14 +3,23 @@ const promptLoader = require('../utils/promptLoader');
 
 class ClaudeOrchestrator {
   constructor() {
-    this.client = new Anthropic({
-      apiKey: process.env.CLAUDE_API_KEY,
-    });
-    this.model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+    const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.warn('[CLAUDE] WARNING: CLAUDE_API_KEY / ANTHROPIC_API_KEY env var not set. Orchestrator will run in mock mode.');
+    }
+    this.apiKeyPresent = Boolean(apiKey);
+    this.client = apiKey ? new Anthropic({ apiKey }) : null;
+    // Default to Claude Opus 4.5 — master orchestrator for the 27-agent system
+    this.model = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20250929';
     this.conversationHistory = [];
+    console.log(`[CLAUDE] Orchestrator initialized — model=${this.model} apiKeyPresent=${this.apiKeyPresent}`);
   }
 
   async makeDecision(marketData, currentPortfolio, decisionType = 'SIGNAL') {
+    // Mock decision when no API key configured — keeps the system running locally
+    if (!this.client) {
+      return { approval_status: 'HOLD', reasoning: 'No CLAUDE_API_KEY configured — running in mock orchestrator mode.' };
+    }
     try {
       const userMessage = this.formatDecisionRequest(marketData, currentPortfolio, decisionType);
 

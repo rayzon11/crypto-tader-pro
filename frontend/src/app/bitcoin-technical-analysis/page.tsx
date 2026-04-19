@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, Zap } from 'lucide-react';
+import CandleChart, { OHLCV } from '../../components/CandleChart';
 
 export default function BitcoinTechnicalAnalysisPage() {
   const [analysis, setAnalysis] = useState<any>(null);
@@ -30,15 +30,8 @@ export default function BitcoinTechnicalAnalysisPage() {
     return <div className="flex items-center justify-center h-screen text-slate-400">Loading analysis...</div>;
   }
 
-  // Prepare chart data from candles
-  const chartData = (analysis.candles || []).map((candle: any) => ({
-    time: new Date(candle.timestamp).toLocaleTimeString(),
-    open: candle.open,
-    high: candle.high,
-    low: candle.low,
-    close: candle.close,
-    volume: candle.volume
-  }));
+  const candles: OHLCV[] = analysis.candles || [];
+  const lastClose = candles[candles.length - 1]?.close || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6">
@@ -48,37 +41,28 @@ export default function BitcoinTechnicalAnalysisPage() {
         <p className="text-slate-400">Professional-grade charting with Ichimoku, on-chain metrics, and macro analysis</p>
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-2 gap-8 mb-8">
-        {/* 4h Candle Chart */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-cyan-500/30 rounded-lg p-6">
-          <h2 className="text-lg font-bold text-white mb-4">4h Candle Chart</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.slice(-48)}>
-              <defs>
-                <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-              <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #06b6d4' }} />
-              <Area type="monotone" dataKey="close" stroke="#06b6d4" fillOpacity={1} fill="url(#colorClose)" />
-            </AreaChart>
-          </ResponsiveContainer>
-          <div className="mt-4 text-sm text-slate-400">
-            <div>Last Close: ${chartData[chartData.length - 1]?.close.toFixed(2)}</div>
-            <div>200-SMA: $66,000</div>
-            <div>50-SMA: $66,800</div>
+      {/* Bloomberg-grade Candlestick Chart — full-width */}
+      {candles.length > 0 && (
+        <div className="mb-8 bg-gradient-to-br from-slate-800 to-slate-900 border border-cyan-500/30 rounded-lg p-4">
+          <CandleChart
+            candles={candles}
+            height={560}
+            showVolume
+            title={`BTC/USDT — Live Candles + EMA20/50 + Bollinger Bands + Volume`}
+          />
+          <div className="mt-3 grid grid-cols-3 gap-4 text-xs text-slate-400">
+            <div>Last Close: <span className="text-white font-bold">${lastClose.toFixed(2)}</span></div>
+            <div>Candles loaded: <span className="text-cyan-400 font-bold">{candles.length}</span></div>
+            <div>Source: <span className="text-cyan-400 font-bold">Binance live</span></div>
           </div>
         </div>
+      )}
 
-        {/* Ichimoku Cloud */}
+      {/* Ichimoku Cloud */}
+      <div className="mb-8">
         <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-cyan-500/30 rounded-lg p-6">
           <h2 className="text-lg font-bold text-white mb-4">Ichimoku Cloud (1d)</h2>
-          <div className="space-y-4">
+          <div className="grid grid-cols-4 gap-4">
             <div className="bg-slate-900/50 p-4 rounded border border-slate-700">
               <div className="text-sm text-slate-400 mb-1">Senkou Span A</div>
               <div className="text-lg font-bold text-cyan-400">$66,800</div>

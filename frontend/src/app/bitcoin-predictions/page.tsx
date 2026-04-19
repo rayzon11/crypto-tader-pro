@@ -1,25 +1,31 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { TrendingUp, TrendingDown, AlertCircle, DollarSign, Target, Zap } from 'lucide-react';
+import CandleChart, { OHLCV } from '../../components/CandleChart';
 
 export default function BitcoinPredictionsPage() {
   const [predictions, setPredictions] = useState<any>(null);
+  const [candles, setCandles] = useState<OHLCV[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTimeframe, setSelectedTimeframe] = useState('1h');
 
   useEffect(() => {
-    fetchPredictions();
-    const interval = setInterval(fetchPredictions, 10000); // Update every 10 seconds
+    fetchAll();
+    const interval = setInterval(fetchAll, 10000); // Update every 10 seconds
     return () => clearInterval(interval);
   }, []);
 
-  const fetchPredictions = async () => {
+  const fetchAll = async () => {
     try {
-      const response = await fetch('http://localhost:3002/api/bitcoin/predict');
-      const data = await response.json();
-      setPredictions(data.data);
+      const [predRes, taRes] = await Promise.all([
+        fetch('http://localhost:3002/api/bitcoin/predict'),
+        fetch('http://localhost:3002/api/bitcoin/technical-analysis'),
+      ]);
+      const predData = await predRes.json();
+      const taData = await taRes.json();
+      setPredictions(predData.data);
+      if (taData?.data?.candles) setCandles(taData.data.candles);
       setLoading(false);
     } catch (error) {
       console.error('Failed to fetch predictions:', error);
@@ -39,6 +45,18 @@ export default function BitcoinPredictionsPage() {
         <h1 className="text-4xl font-bold text-white mb-2">Bitcoin Real-Time Predictions</h1>
         <p className="text-slate-400">AI-powered multi-timeframe analysis with candle patterns and technical indicators</p>
       </div>
+
+      {/* Bloomberg-grade Candlestick Chart */}
+      {candles.length > 0 && (
+        <div className="mb-8 bg-gradient-to-br from-slate-800 to-slate-900 border border-cyan-500/30 rounded-lg p-4">
+          <CandleChart
+            candles={candles}
+            height={520}
+            showVolume
+            title={`BTC/USDT — Live Candles + EMA20/50 + Bollinger Bands`}
+          />
+        </div>
+      )}
 
       {/* Current Price */}
       <div className="grid grid-cols-4 gap-4 mb-8">

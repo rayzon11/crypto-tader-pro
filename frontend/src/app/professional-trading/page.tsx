@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown, AlertCircle, DollarSign, Target, Zap } from 'lucide-react';
+import HedgeFundAnalyst from '@/components/HedgeFundAnalyst';
 
 export default function ProfessionalTradingPage() {
   const [account, setAccount] = useState({
@@ -100,6 +101,11 @@ export default function ProfessionalTradingPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* JP Morgan / Bloomberg-grade analyst console — real live data */}
+        <div className="mb-8">
+          <HedgeFundAnalyst />
+        </div>
+
         {/* Account Overview */}
         <div className="grid grid-cols-4 gap-4 mb-8">
           <div className="bg-slate-800/80 border border-cyan-500/20 rounded-lg p-6">

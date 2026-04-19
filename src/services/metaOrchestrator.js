@@ -28,12 +28,12 @@ class MetaOrchestrator {
    * Initialize all trading agents
    */
   initializeAgents() {
-    // Crypto agents (existing)
-    const cryptoAgents = require('../agents');
-    this.agents.push(cryptoAgents.TRADER);
-    this.agents.push(cryptoAgents.MARKET_ANALYST);
-    this.agents.push(cryptoAgents.ARBITRAGE_SCOUT);
-    this.agents.push(cryptoAgents.GRID_MASTER);
+    // Crypto agents (existing) — agents/index.js exports { agents, ... }
+    const { agents: cryptoAgents } = require('../agents');
+    if (cryptoAgents.TRADER) this.agents.push(cryptoAgents.TRADER);
+    if (cryptoAgents.MARKET_ANALYST) this.agents.push(cryptoAgents.MARKET_ANALYST);
+    if (cryptoAgents.ARBITRAGE_SCOUT) this.agents.push(cryptoAgents.ARBITRAGE_SCOUT);
+    if (cryptoAgents.GRID_MASTER) this.agents.push(cryptoAgents.GRID_MASTER);
 
     // Forex agents (new)
     this.agents.push(new ForexAgent('Forex1m', '1m'));
