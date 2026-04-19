@@ -1134,6 +1134,16 @@ app.post('/api/claude/chat/reset', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Bot API v1 + News aggregator ───
+try {
+  const newsAgg = require('./services/newsAggregator');
+  const botApiV1 = require('./services/botApiV1');
+  newsAgg.start();
+  botApiV1.register(app);
+} catch (e) {
+  console.warn('[BOT-API] failed to register:', e.message);
+}
+
 // ─── Start Server ───
 app.listen(PORT, () => {
   console.log(`\n╔═══════════════════════════════════════════════╗`);

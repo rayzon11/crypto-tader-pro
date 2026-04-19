@@ -2,42 +2,36 @@
 /**
  * IPO Feed — real-time crypto token launch tracker
  * ─────────────────────────────────────────────────
- * Sources (all free, no API key):
- *   1. Binance exchangeInfo snapshot — detects newly listed USDT pairs
- *      by comparing against a persisted snapshot. onboardDate ≤ 30d = IPO.
- *   2. CoinGecko /coins/list/new — recently-added tokens (fallback).
- *   3. Live Binance @ticker WS per pair — price, 24h change, volume.
- *   4. window.__cb_whaleFeed — overlays whale buy/sell pressure per pair.
+ * The Binance SPOT exchangeInfo does NOT include onboardDate, so we
+ * use the backend's /api/listings/ipo endpoint which already tracks
+ * real listings via the newListingsTracker service.
  *
- * Scoring:
- *   score = min(35, volume/1M) + min(25, 24hChangePct/2)
- *         + min(25, whaleBuyPressure*50) + min(15, ageBonus(1..7d sweet))
- *   verdict: BUY ≥ 70, WATCH 50..69, AVOID < 50
+ * We then overlay a live @ticker WS for sub-second price/change
+ * updates and pull whale pressure from window.__cb_whaleFeed.
  */
-
 import { useEffect, useState } from "react";
 
 export type IpoRow = {
-  symbol: string;           // BTCUSDT
-  base: string;             // BTC
-  pair: string;             // BTC/USDT
-  listedAt: number;         // ms (onboardDate)
+  symbol: string;
+  base: string;
+  pair: string;
+  listedAt: number;
   ageDays: number;
   price: number;
   change24h: number;
   quoteVolume: number;
   trades: number;
   spreadPct?: number;
-  whalePressure?: number;   // -1..+1 over last 1m
-  score: number;            // 0..100
+  whalePressure?: number;
+  score: number;
   verdict: "BUY" | "WATCH" | "AVOID";
   reasoning: string;
 };
 
-const SS_KEY = "cb:ipoFeed:v2";
-const SNAP_KEY = "cb:ipoSnap:v2";
+const API = "http://localhost:3002";
+const SS_KEY = "cb:ipoFeed:v3";
 const TTL = 10 * 60 * 1000;
-const REFRESH = 45_000;
+const REFRESH = 30_000;
 
 type Listener = (rows: IpoRow[]) => void;
 
@@ -49,9 +43,7 @@ class IpoFeed {
   tickerMap = new Map<string, { price: number; change24h: number; qv: number; trades: number }>();
   started = false;
 
-  constructor() {
-    this.hydrate();
-  }
+  constructor() { this.hydrate(); }
   hydrate() {
     try {
       const raw = sessionStorage.getItem(SS_KEY);
@@ -60,9 +52,7 @@ class IpoFeed {
       if (p && Array.isArray(p.rows) && Date.now() - p.t < TTL) this.rows = p.rows;
     } catch {}
   }
-  persist() {
-    try { sessionStorage.setItem(SS_KEY, JSON.stringify({ t: Date.now(), rows: this.rows })); } catch {}
-  }
+  persist() { try { sessionStorage.setItem(SS_KEY, JSON.stringify({ t: Date.now(), rows: this.rows })); } catch {} }
   subscribe(cb: Listener) {
     this.listeners.add(cb);
     cb(this.rows);
@@ -74,44 +64,20 @@ class IpoFeed {
     this.started = true;
     this.refresh();
     this.timer = setInterval(() => this.refresh(), REFRESH);
-    this.openTickerWs();
   }
   emit() { this.listeners.forEach(cb => { try { cb(this.rows); } catch {} }); }
 
   async refresh() {
     try {
-      const r = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+      const r = await fetch(`${API}/api/listings/ipo`, { cache: "no-store" });
       if (!r.ok) return;
-      const j = await r.json();
-      const now = Date.now();
-      const all: { symbol: string; base: string; onboardDate: number }[] = [];
-      for (const s of j.symbols || []) {
-        if (s.status !== "TRADING") continue;
-        if (s.quoteAsset !== "USDT") continue;
-        const onboard = Number(s.onboardDate || 0);
-        if (!onboard) continue;
-        if (now - onboard > 30 * 86400000) continue; // only last 30d
-        all.push({ symbol: s.symbol, base: s.baseAsset, onboardDate: onboard });
-      }
-      // detect new listings by diffing snapshot
-      try {
-        const snapRaw = sessionStorage.getItem(SNAP_KEY);
-        const prev: string[] = snapRaw ? JSON.parse(snapRaw) : [];
-        const prevSet = new Set(prev);
-        const current = all.map(a => a.symbol);
-        const newOnes = current.filter(s => !prevSet.has(s));
-        sessionStorage.setItem(SNAP_KEY, JSON.stringify(current));
-        if (prev.length && newOnes.length) {
-          console.log("[IPO] New listings detected:", newOnes);
-        }
-      } catch {}
-
-      // subscribe tickers
-      this.subscribeTickers(all.map(a => a.symbol.toLowerCase()));
-
-      // sort newest first, cap 60
-      all.sort((a, b) => b.onboardDate - a.onboardDate);
-      const rows: IpoRow[] = all.slice(0, 60).map(a => this.toRow(a));
+      const arr = await r.json();
+      if (!Array.isArray(arr)) return;
+      // backend already provides score/verdict/reasoning; we just
+      // enrich with live ticker + whale pressure
+      const rows: IpoRow[] = arr.slice(0, 80).map((x: any) => this.enrich(x));
+      // subscribe live tickers for these symbols
+      this.subscribeTickers(rows.map(r => r.symbol.toLowerCase()));
       this.rows = rows;
       this.persist();
       this.emit();
@@ -120,55 +86,43 @@ class IpoFeed {
     }
   }
 
-  toRow(a: { symbol: string; base: string; onboardDate: number }): IpoRow {
-    const t = this.tickerMap.get(a.symbol);
-    const ageDays = (Date.now() - a.onboardDate) / 86400000;
-    const price = t?.price ?? 0;
-    const change24h = t?.change24h ?? 0;
-    const qv = t?.qv ?? 0;
-    const trades = t?.trades ?? 0;
+  enrich(x: any): IpoRow {
+    const t = this.tickerMap.get(x.symbol);
+    const price = t?.price ?? Number(x.price) ?? 0;
+    const change24h = t?.change24h ?? Number(x.change24h) ?? 0;
+    const quoteVolume = t?.qv ?? Number(x.quoteVolume) ?? 0;
+    const trades = t?.trades ?? Number(x.trades) ?? 0;
 
-    // whale pressure from singleton feed
     let whalePressure: number | undefined;
     try {
       const feed = (window as any).__cb_whaleFeed;
       if (feed?.stats) {
-        const s = feed.stats.get?.(`${a.base}/USDT`);
+        const s = feed.stats.get?.(`${x.base}/USDT`);
         if (s) whalePressure = s.pressure;
       }
     } catch {}
 
-    // scoring
-    const volScore    = Math.min(35, qv / 1_000_000);
-    const chgScore    = Math.max(0, Math.min(25, change24h / 2));
-    const whaleScore  = Math.max(0, Math.min(25, (whalePressure ?? 0) * 50));
-    const ageScore    = ageDays >= 1 && ageDays <= 7 ? 15 : ageDays < 1 ? 8 : Math.max(0, 15 - (ageDays - 7));
-    // overheating penalty
-    const overheat = change24h > 50 ? (change24h - 50) / 4 : 0;
-    const score = Math.max(0, Math.min(100, volScore + chgScore + whaleScore + ageScore - overheat));
-
-    const verdict: IpoRow["verdict"] = score >= 70 ? "BUY" : score >= 50 ? "WATCH" : "AVOID";
-    const reasoning = [
-      qv > 5e6 ? `Deep liquidity ($${(qv/1e6).toFixed(1)}M/24h)` : qv > 1e6 ? `Adequate liquidity` : `Thin liquidity`,
-      change24h > 20 ? `Hot +${change24h.toFixed(1)}% 24h` : change24h > 0 ? `Up ${change24h.toFixed(1)}%` : `Down ${change24h.toFixed(1)}%`,
-      ageDays < 1 ? `Fresh <24h` : ageDays < 8 ? `${ageDays.toFixed(1)}d old (sweet spot)` : `${ageDays.toFixed(0)}d old`,
-      whalePressure != null ? (whalePressure > 0.2 ? `Whales accumulating` : whalePressure < -0.2 ? `Whales distributing` : `Whale flow balanced`) : ``,
-      overheat > 0 ? `⚠ overheated` : ``,
-    ].filter(Boolean).join(" · ");
-
     return {
-      symbol: a.symbol, base: a.base, pair: `${a.base}/USDT`,
-      listedAt: a.onboardDate, ageDays: Math.round(ageDays * 10) / 10,
-      price, change24h, quoteVolume: qv, trades,
-      whalePressure, score: Math.round(score), verdict, reasoning,
+      symbol: x.symbol,
+      base: x.base,
+      pair: `${x.base}/USDT`,
+      listedAt: Number(x.listedAt) || Date.now(),
+      ageDays: Number(x.ageDays) || 0,
+      price, change24h, quoteVolume, trades,
+      spreadPct: x.spreadPct != null ? Number(x.spreadPct) : undefined,
+      whalePressure,
+      score: Math.round(Number(x.score) || 0),
+      verdict: (x.verdict || "AVOID") as IpoRow["verdict"],
+      reasoning: String(x.reasoning || ""),
     };
   }
 
   subscribeTickers(symbols: string[]) {
-    // single combined WS for all listed symbols
     if (this.wsTicker) { try { this.wsTicker.close(); } catch {} this.wsTicker = null; }
     if (symbols.length === 0) return;
-    const streams = symbols.map(s => `${s}@ticker`).join("/");
+    // Binance limits stream URL length — chunk if huge
+    const chunk = symbols.slice(0, 60);
+    const streams = chunk.map(s => `${s}@ticker`).join("/");
     const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
     try {
       const ws = new WebSocket(url);
@@ -184,15 +138,10 @@ class IpoFeed {
             qv: parseFloat(d.q),
             trades: Number(d.n),
           });
-          // live-update rows in place
           let dirty = false;
           for (let i = 0; i < this.rows.length; i++) {
             if (this.rows[i].symbol === d.s) {
-              this.rows[i] = this.toRow({
-                symbol: this.rows[i].symbol,
-                base: this.rows[i].base,
-                onboardDate: this.rows[i].listedAt,
-              });
+              this.rows[i] = this.enrich({ ...this.rows[i] });
               dirty = true;
             }
           }
@@ -202,8 +151,6 @@ class IpoFeed {
       ws.onerror = () => { try { ws.close(); } catch {} };
     } catch {}
   }
-
-  openTickerWs() { /* called lazily after first refresh */ }
 }
 
 function getInstance(): IpoFeed {
