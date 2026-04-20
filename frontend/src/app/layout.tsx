@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import WhaleAlarm from "@/components/WhaleAlarm";
+import ChartPrewarmer from "@/components/ChartPrewarmer";
 
 export const metadata: Metadata = {
   title: "CryptoBot - 27 Agent Autonomous Trading System (Claude Opus)",
@@ -22,6 +23,7 @@ export default function RootLayout({
       <body>
         <Sidebar />
         <WhaleAlarm />
+        <ChartPrewarmer />
         <main className="ml-16 lg:ml-56 min-h-screen">{children}</main>
       </body>
     </html>
