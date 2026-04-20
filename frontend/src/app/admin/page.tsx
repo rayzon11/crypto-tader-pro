@@ -32,6 +32,7 @@ import {
   getRiskPnlSnapshot,
   type AgentCoordinationEvent,
 } from "@/lib/agentBrain";
+import { useFlowStats } from "@/lib/whaleFeed";
 
 type Tab = "agents" | "risk" | "goals" | "api" | "coordination" | "hedge" | "tools";
 
@@ -66,7 +67,8 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 5000);
+    // Tick fast (1s) so Aladdin risk KPIs move live like a Bloomberg terminal
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -112,7 +114,16 @@ export default function AdminPage() {
 
   if (!mounted) return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">Loading admin...</div>;
 
-  const riskMetrics = calculateRiskMetrics(tick);
+  // Live whale pressure → feed into Aladdin risk calc so numbers reflect market
+  const flowStats = useFlowStats();
+  const liveInputs = (() => {
+    let buy = 0, sell = 0;
+    for (const s of Object.values(flowStats)) { buy += s.buyUsd; sell += s.sellUsd; }
+    const tot = buy + sell;
+    const pressure = tot > 0 ? (buy - sell) / tot : 0;
+    return { pressure };
+  })();
+  const riskMetrics = calculateRiskMetrics(tick, liveInputs);
   const scenarios = runScenarioAnalysis(tick);
   const stressTests = runStressTests(tick);
   const enabledCount = Object.values(agentEnabled).filter(Boolean).length;
@@ -358,9 +369,17 @@ export default function AdminPage() {
           <div className="space-y-4">
             {/* Aladdin Risk Metrics */}
             <div className="p-4 rounded-xl bg-slate-800/30 border border-amber-500/20">
-              <h3 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
-                <span>🏛️</span> Aladdin Risk Analytics
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                  <span>🏛️</span> Aladdin Risk Analytics
+                </h3>
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-emerald-300 font-bold">LIVE</span>
+                  <span className="text-slate-500">· tick {tick} · {new Date().toLocaleTimeString()}</span>
+                  <span className="text-slate-400 ml-2">whale ρ <span className={liveInputs.pressure >= 0 ? "text-emerald-300 font-bold" : "text-rose-300 font-bold"}>{(liveInputs.pressure * 100).toFixed(1)}%</span></span>
+                </div>
+              </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { label: "Portfolio VaR (99%)", value: `${riskMetrics.portfolioVaR}%`, color: "text-red-400" },

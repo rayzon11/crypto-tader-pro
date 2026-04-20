@@ -328,10 +328,22 @@ export default function Terminal() {
               ))}
             </div>
             <div className="ml-auto text-sm font-mono flex items-center gap-3">
-              <span className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border ${live.connected ? "border-green-400 text-green-400" : "border-yellow-400 text-yellow-400"}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${live.connected ? "bg-green-400 animate-pulse" : "bg-yellow-400"}`} />
-                {live.connected ? "LIVE · WS" : "CONNECTING"}
-              </span>
+              {(() => {
+                const hasData = liveCandles.length > 0;
+                const status = live.connected ? "LIVE · WS" : hasData ? "LIVE · REST" : "CONNECTING";
+                const color = live.connected
+                  ? "border-green-400 text-green-400"
+                  : hasData
+                    ? "border-cyan-400 text-cyan-400"
+                    : "border-yellow-400 text-yellow-400";
+                const dot = live.connected ? "bg-green-400 animate-pulse" : hasData ? "bg-cyan-400 animate-pulse" : "bg-yellow-400";
+                return (
+                  <span className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border ${color}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                    {status}
+                  </span>
+                );
+              })()}
               <span className="text-slate-400">Price:</span>
               <span className="text-white font-bold text-lg tabular-nums">${livePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
               {liveChange != null && !Number.isNaN(liveChange) && (

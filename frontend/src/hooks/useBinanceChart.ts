@@ -3,9 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { OHLCV } from "@/components/CandleChart";
 
-// Binance public REST kline endpoint — no auth, no rate limit issues for small batches.
-// Response format: [[openTime, open, high, low, close, volume, closeTime, ...], ...]
-// Intervals accepted: 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M
+/**
+ * Three-stage candle loader for snappy UX:
+ *   Stage A (~0ms):  paint last-known candles from sessionStorage
+ *                    so the chart appears instantly on nav / reload
+ *   Stage B (<300ms): fast REST bootstrap (200 bars) — refreshes prices
+ *   Stage C (<2s):    REST backfill to 500 bars + WS @kline for live ticks
+ *
+ * Previously the chart showed "CONNECTING" for 1–2s while the WS opened.
+ * Now as soon as Stage A or B lands, candles are visible. The "CONNECTING"
+ * badge flips to "LIVE · REST" immediately and to "LIVE · WS" once the
+ * socket opens.
+ */
 
 function toSymbol(pair: string) {
   return pair.replace("/", "").toUpperCase();
@@ -13,12 +22,15 @@ function toSymbol(pair: string) {
 function toStream(pair: string) {
   return pair.replace("/", "").toLowerCase();
 }
+function cacheKey(pair: string, tf: string) {
+  return `cb:candles:${toSymbol(pair)}:${tf}:v1`;
+}
 
 async function fetchKlines(pair: string, tf: string, limit = 500): Promise<OHLCV[]> {
   const sym = toSymbol(pair);
   const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=${limit}`;
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) return [];
     const arr: any[] = await r.json();
     return arr.map((k) => ({
@@ -34,6 +46,27 @@ async function fetchKlines(pair: string, tf: string, limit = 500): Promise<OHLCV
   }
 }
 
+function loadCache(pair: string, tf: string): OHLCV[] {
+  try {
+    if (typeof window === "undefined") return [];
+    const raw = sessionStorage.getItem(cacheKey(pair, tf));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.candles)) return [];
+    // Accept cache up to 30 min old — WS will correct it
+    if (Date.now() - parsed.t > 30 * 60 * 1000) return [];
+    return parsed.candles;
+  } catch { return []; }
+}
+function saveCache(pair: string, tf: string, candles: OHLCV[]) {
+  try {
+    if (typeof window === "undefined") return;
+    // keep last 500 to cap size
+    const trimmed = candles.slice(-500);
+    sessionStorage.setItem(cacheKey(pair, tf), JSON.stringify({ t: Date.now(), candles: trimmed }));
+  } catch {}
+}
+
 export interface UseBinanceChart {
   candles: OHLCV[];
   price: number | null;
@@ -43,45 +76,62 @@ export interface UseBinanceChart {
   lastTickAt: number;
 }
 
-/**
- * One-shot hook: bootstraps ~500 historical candles from Binance REST,
- * then subscribes to WS for live tick updates on the current candle.
- * Emits a new `candles` array every tick so CandleChart can incrementally update.
- */
 export function useBinanceChart(pair: string, timeframe: string): UseBinanceChart {
-  const [candles, setCandles] = useState<OHLCV[]>([]);
-  const [price, setPrice] = useState<number | null>(null);
+  // Seed candles SYNCHRONOUSLY from cache so the chart paints on first render
+  const [candles, setCandles] = useState<OHLCV[]>(() => loadCache(pair, timeframe));
+  const [price, setPrice] = useState<number | null>(() => {
+    const c = loadCache(pair, timeframe);
+    return c.length ? c[c.length - 1].close : null;
+  });
   const [change24h, setChange24h] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<any>(null);
-  const candlesRef = useRef<OHLCV[]>([]);
+  const candlesRef = useRef<OHLCV[]>(candles);
+  const saveTimer = useRef<any>(null);
 
   useEffect(() => {
     candlesRef.current = candles;
-  }, [candles]);
+    // debounced cache save
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveCache(pair, timeframe, candles), 800);
+  }, [candles, pair, timeframe]);
 
   useEffect(() => {
     if (!pair || !timeframe) return;
     let stopped = false;
 
-    // Step 1 — bootstrap history
+    // Re-seed from cache when pair/tf changes (useState initializer only fires once)
+    const cached = loadCache(pair, timeframe);
+    if (cached.length > 0) {
+      candlesRef.current = cached;
+      setCandles(cached);
+      setPrice(cached[cached.length - 1].close);
+    }
+
+    // Stage B — fast 200-bar bootstrap so prices are current
     (async () => {
       setError(null);
-      const hist = await fetchKlines(pair, timeframe, 500);
+      const fast = await fetchKlines(pair, timeframe, 200);
       if (stopped) return;
-      if (hist.length === 0) {
-        setError(`No data for ${pair} @ ${timeframe}`);
-      } else {
-        candlesRef.current = hist;
-        setCandles(hist);
-        setPrice(hist[hist.length - 1].close);
+      if (fast.length === 0) {
+        if (candlesRef.current.length === 0) setError(`No data for ${pair} @ ${timeframe}`);
+        return;
       }
+      candlesRef.current = fast;
+      setCandles(fast);
+      setPrice(fast[fast.length - 1].close);
+
+      // Stage C — backfill to 500 bars in background
+      const full = await fetchKlines(pair, timeframe, 500);
+      if (stopped || full.length === 0) return;
+      candlesRef.current = full;
+      setCandles(full);
     })();
 
-    // Step 2 — open WS for this pair/tf
+    // WS — live ticks
     const sym = toStream(pair);
     const url = `wss://stream.binance.com:9443/stream?streams=${sym}@kline_${timeframe}/${sym}@ticker`;
 
@@ -90,7 +140,6 @@ export function useBinanceChart(pair: string, timeframe: string): UseBinanceChar
       try {
         const ws = new WebSocket(url);
         wsRef.current = ws;
-
         ws.onopen = () => setConnected(true);
         ws.onclose = () => {
           setConnected(false);
@@ -112,7 +161,6 @@ export function useBinanceChart(pair: string, timeframe: string): UseBinanceChar
                 close: parseFloat(k.c),
                 volume: parseFloat(k.v),
               };
-              // Merge into candles: replace last if same timestamp, else append
               const arr = candlesRef.current;
               const last = arr[arr.length - 1];
               let next: OHLCV[];
@@ -143,6 +191,7 @@ export function useBinanceChart(pair: string, timeframe: string): UseBinanceChar
     return () => {
       stopped = true;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
       try { wsRef.current?.close(); } catch {}
       setConnected(false);
     };

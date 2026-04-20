@@ -1138,7 +1138,9 @@ app.post('/api/claude/chat/reset', (req, res) => {
 try {
   const newsAgg = require('./services/newsAggregator');
   const botApiV1 = require('./services/botApiV1');
+  const candleCache = require('./services/candleCache');
   newsAgg.start();
+  candleCache.start();
   botApiV1.register(app);
 } catch (e) {
   console.warn('[BOT-API] failed to register:', e.message);

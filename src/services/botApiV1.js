@@ -16,6 +16,7 @@
  */
 
 const newsAgg = require("./newsAggregator");
+const candleCache = require("./candleCache");
 
 const BINANCE = "https://api.binance.com";
 
@@ -168,9 +169,28 @@ function register(app) {
         low: parseFloat(k[3]), close: parseFloat(k[4]), volume: parseFloat(k[5]),
         closeTime: k[6], trades: Number(k[8]),
       }));
+      // Persist to cache so we build up history over time
+      try {
+        candleCache.put(symbol, interval, data.map(d => ({
+          timestamp: d.openTime, open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume,
+        })));
+      } catch {}
       res.json({ symbol, interval, count: data.length, data, ts: Date.now() });
     } catch (e) { res.status(502).json({ error: e.message }); }
   });
+
+  // Cached candles (offline / backtest fast path)
+  app.get("/api/v1/candles/cached", (req, res) => {
+    try {
+      const symbol = String(req.query.symbol || "BTCUSDT").toUpperCase();
+      const interval = String(req.query.interval || "1h");
+      const limit = Math.min(10000, Math.max(1, parseInt(req.query.limit, 10) || 500));
+      const rows = candleCache.get(symbol, interval, limit);
+      res.json({ symbol, interval, count: rows.length, data: rows, ts: Date.now() });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/v1/cache/stats", (_req, res) => res.json(candleCache.stats()));
 
   // Orderbook
   app.get("/api/v1/orderbook", async (req, res) => {
