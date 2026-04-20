@@ -312,6 +312,294 @@ function register(app) {
     res.json({ count: out.length, items: out.slice(0, limit), status: newsAgg.status(), ts: Date.now() });
   });
 
+  // ── Volume Profile (VPVR) ─────────────────────────────────────────
+  // Bloomberg-style Volume-at-Price: POC, VAH, VAL, HVN/LVN detection
+  app.get("/api/v1/volume-profile", async (req, res) => {
+    try {
+      const symbol = String(req.query.symbol || "BTCUSDT").toUpperCase();
+      const interval = String(req.query.interval || "1h");
+      const limit = Math.min(1000, Math.max(50, parseInt(req.query.limit, 10) || 500));
+      const buckets = Math.min(100, Math.max(20, parseInt(req.query.buckets, 10) || 50));
+
+      const raw = await bfetch(`/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+      const bars = raw.map(k => ({
+        h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4]),
+        v: parseFloat(k[5]), buyVol: parseFloat(k[9]) || 0,
+      }));
+      const hi = Math.max(...bars.map(b => b.h));
+      const lo = Math.min(...bars.map(b => b.l));
+      const step = (hi - lo) / buckets;
+      if (!Number.isFinite(step) || step <= 0) return res.json({ symbol, buckets: [], poc: null });
+
+      // Distribute each bar's volume across buckets it spans
+      const bins = new Array(buckets).fill(0).map(() => ({ price: 0, vol: 0, buy: 0, sell: 0 }));
+      for (let i = 0; i < buckets; i++) bins[i].price = lo + step * (i + 0.5);
+      for (const b of bars) {
+        const spanLo = Math.max(0, Math.floor((b.l - lo) / step));
+        const spanHi = Math.min(buckets - 1, Math.floor((b.h - lo) / step));
+        const span = spanHi - spanLo + 1;
+        if (span <= 0) continue;
+        const share = b.v / span;
+        const buyShare = b.buyVol / span;
+        const sellShare = (b.v - b.buyVol) / span;
+        for (let i = spanLo; i <= spanHi; i++) {
+          bins[i].vol += share;
+          bins[i].buy += buyShare;
+          bins[i].sell += sellShare;
+        }
+      }
+      const totalVol = bins.reduce((s, b) => s + b.vol, 0);
+      const pocIdx = bins.reduce((a, b, i, arr) => b.vol > arr[a].vol ? i : a, 0);
+      const poc = bins[pocIdx];
+      // Value Area: expand around POC until 70% of volume captured
+      const target = totalVol * 0.70;
+      let captured = bins[pocIdx].vol;
+      let lo_i = pocIdx, hi_i = pocIdx;
+      while (captured < target && (lo_i > 0 || hi_i < buckets - 1)) {
+        const nextLo = lo_i > 0 ? bins[lo_i - 1].vol : -1;
+        const nextHi = hi_i < buckets - 1 ? bins[hi_i + 1].vol : -1;
+        if (nextHi > nextLo) { hi_i++; captured += bins[hi_i].vol; }
+        else if (nextLo >= 0) { lo_i--; captured += bins[lo_i].vol; }
+        else break;
+      }
+      // HVN/LVN — high/low volume nodes (>1.5x / <0.3x avg)
+      const avg = totalVol / buckets;
+      const nodes = bins.map((b, i) => ({
+        price: b.price, vol: b.vol,
+        type: b.vol > avg * 1.5 ? "HVN" : b.vol < avg * 0.3 ? "LVN" : "NORMAL",
+        delta: b.buy - b.sell, buyPct: b.vol > 0 ? b.buy / b.vol : 0.5,
+        idx: i,
+      }));
+
+      res.json({
+        symbol, interval, limit, buckets,
+        priceRange: { lo, hi, step },
+        totalVol,
+        poc: { price: poc.price, vol: poc.vol, idx: pocIdx },
+        valueArea: { vah: bins[hi_i].price, val: bins[lo_i].price, captured, pct: captured / totalVol },
+        nodes,
+        ts: Date.now(),
+      });
+    } catch (e) { res.status(502).json({ error: e.message }); }
+  });
+
+  // ── Microstructure — OFI, VPIN, Kyle λ, spread health ─────────────
+  // These are the core signals used by HFT desks (Citadel, Jump, JP Morgan EFX)
+  app.get("/api/v1/microstructure", async (req, res) => {
+    try {
+      const symbol = String(req.query.symbol || "BTCUSDT").toUpperCase();
+
+      // Pull orderbook (depth=100) + recent trades (limit=500)
+      const [depth, trades] = await Promise.all([
+        bfetch(`/api/v3/depth?symbol=${symbol}&limit=100`),
+        bfetch(`/api/v3/trades?symbol=${symbol}&limit=500`),
+      ]);
+      const bids = depth.bids.map(b => [parseFloat(b[0]), parseFloat(b[1])]);
+      const asks = depth.asks.map(a => [parseFloat(a[0]), parseFloat(a[1])]);
+      const bestBid = bids[0][0], bestAsk = asks[0][0];
+      const mid = (bestBid + bestAsk) / 2;
+      const spread = bestAsk - bestBid;
+      const spreadBps = (spread / mid) * 10000;
+
+      // Depth imbalance (top 10 levels)
+      const bidQty = bids.slice(0, 10).reduce((s, b) => s + b[1], 0);
+      const askQty = asks.slice(0, 10).reduce((s, a) => s + a[1], 0);
+      const depthImbalance = (bidQty - askQty) / (bidQty + askQty);
+
+      // Order-flow imbalance (OFI) from recent trades
+      let buyVol = 0, sellVol = 0, buyCount = 0, sellCount = 0;
+      for (const t of trades) {
+        const q = parseFloat(t.qty);
+        if (t.isBuyerMaker) { sellVol += q; sellCount++; }
+        else { buyVol += q; buyCount++; }
+      }
+      const totalVol = buyVol + sellVol;
+      const ofi = totalVol > 0 ? (buyVol - sellVol) / totalVol : 0;
+
+      // VPIN (Volume-synchronized Probability of Informed trading)
+      // Simplified: absolute imbalance normalized by bucket volume
+      const bucketSize = totalVol / 10;
+      const buckets = [];
+      let curBuy = 0, curSell = 0, curVol = 0;
+      for (const t of trades) {
+        const q = parseFloat(t.qty);
+        if (t.isBuyerMaker) curSell += q; else curBuy += q;
+        curVol += q;
+        if (curVol >= bucketSize) {
+          buckets.push(Math.abs(curBuy - curSell) / curVol);
+          curBuy = curSell = curVol = 0;
+        }
+      }
+      const vpin = buckets.length > 0 ? buckets.reduce((s, v) => s + v, 0) / buckets.length : 0;
+
+      // Kyle's Lambda — price impact per unit volume (simplified)
+      // Regress price changes on signed volume across recent trades
+      const priceChanges = [];
+      const signedVols = [];
+      for (let i = 1; i < trades.length; i++) {
+        const p0 = parseFloat(trades[i - 1].price);
+        const p1 = parseFloat(trades[i].price);
+        const q = parseFloat(trades[i].qty);
+        const signed = trades[i].isBuyerMaker ? -q : q;
+        priceChanges.push(p1 - p0);
+        signedVols.push(signed);
+      }
+      const meanDP = priceChanges.reduce((s, v) => s + v, 0) / (priceChanges.length || 1);
+      const meanSV = signedVols.reduce((s, v) => s + v, 0) / (signedVols.length || 1);
+      let num = 0, den = 0;
+      for (let i = 0; i < priceChanges.length; i++) {
+        num += (signedVols[i] - meanSV) * (priceChanges[i] - meanDP);
+        den += (signedVols[i] - meanSV) ** 2;
+      }
+      const kyleLambda = den > 0 ? num / den : 0;
+
+      // Liquidity walls — big levels within ±1% of mid
+      const walls = [];
+      const band = mid * 0.01;
+      for (const [p, q] of bids) {
+        if (mid - p > band) break;
+        if (q * p > 500_000) walls.push({ side: "BID", price: p, qty: q, usd: q * p });
+      }
+      for (const [p, q] of asks) {
+        if (p - mid > band) break;
+        if (q * p > 500_000) walls.push({ side: "ASK", price: p, qty: q, usd: q * p });
+      }
+      walls.sort((a, b) => b.usd - a.usd);
+
+      // Toxicity verdict
+      const toxicity = vpin > 0.4 ? "TOXIC" : vpin > 0.25 ? "ELEVATED" : "NORMAL";
+      const pressure = ofi > 0.3 ? "STRONG_BUY" : ofi > 0.1 ? "BUY" : ofi < -0.3 ? "STRONG_SELL" : ofi < -0.1 ? "SELL" : "BALANCED";
+
+      res.json({
+        symbol, mid, spread, spreadBps,
+        depth: { bidQty, askQty, imbalance: depthImbalance },
+        orderFlow: { buyVol, sellVol, buyCount, sellCount, ofi, pressure },
+        vpin, toxicity,
+        kyleLambda,  // $ per unit volume
+        walls: walls.slice(0, 10),
+        ts: Date.now(),
+      });
+    } catch (e) { res.status(502).json({ error: e.message }); }
+  });
+
+  // ── VWAP / TWAP with deviation bands ──────────────────────────────
+  app.get("/api/v1/vwap", async (req, res) => {
+    try {
+      const symbol = String(req.query.symbol || "BTCUSDT").toUpperCase();
+      const interval = String(req.query.interval || "5m");
+      const limit = Math.min(500, Math.max(20, parseInt(req.query.limit, 10) || 288)); // ~24h of 5m
+      const raw = await bfetch(`/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+      const bars = raw.map(k => ({
+        t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5],
+        typical: (+k[2] + +k[3] + +k[4]) / 3,
+      }));
+
+      let pvSum = 0, vSum = 0;
+      const series = [];
+      const devs = [];
+      for (const b of bars) {
+        pvSum += b.typical * b.v;
+        vSum += b.v;
+        const vwap = vSum > 0 ? pvSum / vSum : b.c;
+        devs.push(b.c - vwap);
+        series.push({ t: b.t, c: b.c, vwap });
+      }
+      // Deviation std → VWAP bands (1σ, 2σ)
+      const meanDev = devs.reduce((s, v) => s + v, 0) / devs.length;
+      const variance = devs.reduce((s, v) => s + (v - meanDev) ** 2, 0) / devs.length;
+      const sigma = Math.sqrt(variance);
+      const vwap = vSum > 0 ? pvSum / vSum : 0;
+      // TWAP = simple mean of closes
+      const twap = bars.reduce((s, b) => s + b.c, 0) / bars.length;
+      const last = bars[bars.length - 1];
+      const devPct = vwap > 0 ? ((last.c - vwap) / vwap) * 100 : 0;
+      const zscore = sigma > 0 ? (last.c - vwap) / sigma : 0;
+
+      res.json({
+        symbol, interval,
+        vwap, twap, sigma,
+        bands: {
+          upper1: vwap + sigma, lower1: vwap - sigma,
+          upper2: vwap + 2 * sigma, lower2: vwap - 2 * sigma,
+        },
+        last: last.c,
+        devPct, zscore,
+        signal: zscore > 2 ? "OVEREXTENDED_UP" : zscore < -2 ? "OVEREXTENDED_DOWN"
+              : zscore > 1 ? "ABOVE_VALUE" : zscore < -1 ? "BELOW_VALUE" : "AT_VALUE",
+        series: series.slice(-120),
+        ts: Date.now(),
+      });
+    } catch (e) { res.status(502).json({ error: e.message }); }
+  });
+
+  // ── Kelly sizing + risk-of-ruin ───────────────────────────────────
+  // Optimal fractional Kelly given winrate, avg win, avg loss
+  app.get("/api/v1/kelly", (req, res) => {
+    const w = Math.max(0.01, Math.min(0.99, parseFloat(req.query.winrate) || 0.55));
+    const avgWin = Math.max(0.0001, parseFloat(req.query.avgWin) || 0.02);
+    const avgLoss = Math.max(0.0001, Math.abs(parseFloat(req.query.avgLoss)) || 0.01);
+    const equity = parseFloat(req.query.equity) || 10000;
+    const b = avgWin / avgLoss;
+    const kelly = w - (1 - w) / b;
+    const halfKelly = kelly / 2;
+    const quarterKelly = kelly / 4;
+    // Risk of ruin (fixed-fraction) — simplified Vince formula
+    const edge = w * avgWin - (1 - w) * avgLoss;
+    const ror = edge <= 0 ? 1 : Math.pow((1 - edge) / (1 + edge), 10);
+    const expectancy = w * avgWin - (1 - w) * avgLoss;
+    res.json({
+      winrate: w, avgWin, avgLoss, b,
+      kelly, halfKelly, quarterKelly,
+      equity,
+      sizeFull: Math.max(0, equity * kelly),
+      sizeHalf: Math.max(0, equity * halfKelly),
+      sizeQuarter: Math.max(0, equity * quarterKelly),
+      expectancy, edge,
+      riskOfRuin: Math.max(0, Math.min(1, ror)),
+      recommendation: kelly <= 0 ? "NO_EDGE_DO_NOT_TRADE"
+        : kelly < 0.05 ? "TINY_EDGE_QUARTER_KELLY"
+        : kelly < 0.15 ? "HEALTHY_EDGE_HALF_KELLY"
+        : "STRONG_EDGE_HALF_KELLY_MAX",
+      ts: Date.now(),
+    });
+  });
+
+  // ── Big trades (block prints) ─────────────────────────────────────
+  // Filter recent trades by USD threshold — Bloomberg Block Ticker equivalent
+  app.get("/api/v1/big-trades", async (req, res) => {
+    try {
+      const symbol = String(req.query.symbol || "BTCUSDT").toUpperCase();
+      const minUsd = parseFloat(req.query.minUsd) || 100_000;
+      const limit = Math.min(1000, Math.max(10, parseInt(req.query.limit, 10) || 500));
+      const raw = await bfetch(`/api/v3/trades?symbol=${symbol}&limit=${limit}`);
+      const blocks = raw
+        .map(t => {
+          const price = parseFloat(t.price);
+          const qty = parseFloat(t.qty);
+          const usd = price * qty;
+          return {
+            id: t.id, price, qty, usd, time: t.time,
+            side: t.isBuyerMaker ? "SELL" : "BUY",
+            tier: usd >= 1_000_000 ? "MEGA" : usd >= 250_000 ? "LARGE" : usd >= 100_000 ? "BLOCK" : "NORMAL",
+          };
+        })
+        .filter(t => t.usd >= minUsd)
+        .sort((a, b) => b.time - a.time);
+      const stats = blocks.reduce((s, t) => {
+        if (t.side === "BUY") { s.buyUsd += t.usd; s.buyCount++; }
+        else { s.sellUsd += t.usd; s.sellCount++; }
+        return s;
+      }, { buyUsd: 0, sellUsd: 0, buyCount: 0, sellCount: 0 });
+      const totalUsd = stats.buyUsd + stats.sellUsd;
+      res.json({
+        symbol, minUsd, count: blocks.length,
+        stats: { ...stats, netUsd: stats.buyUsd - stats.sellUsd, pressure: totalUsd > 0 ? (stats.buyUsd - stats.sellUsd) / totalUsd : 0 },
+        trades: blocks,
+        ts: Date.now(),
+      });
+    } catch (e) { res.status(502).json({ error: e.message }); }
+  });
+
   // Status
   app.get("/api/v1/status", (_req, res) => {
     res.json({
@@ -320,13 +608,17 @@ function register(app) {
       news: newsAgg.status(),
       endpoints: [
         "/api/v1/klines", "/api/v1/ticker", "/api/v1/orderbook", "/api/v1/trades",
-        "/api/v1/indicators", "/api/v1/correlation", "/api/v1/news", "/api/v1/status",
+        "/api/v1/indicators", "/api/v1/correlation", "/api/v1/news",
+        "/api/v1/volume-profile", "/api/v1/microstructure", "/api/v1/vwap",
+        "/api/v1/kelly", "/api/v1/big-trades",
+        "/api/v1/candles/cached", "/api/v1/cache/stats", "/api/v1/status",
       ],
+      candleCache: candleCache.stats(),
       ts: Date.now(),
     });
   });
 
-  console.log("[BOT-API] v1 endpoints registered: klines, ticker, orderbook, trades, indicators, correlation, news, status");
+  console.log("[BOT-API] v1 endpoints registered: klines, ticker, orderbook, trades, indicators, correlation, news, volume-profile, microstructure, vwap, kelly, big-trades, candles/cached, cache/stats, status");
 }
 
 module.exports = { register };
