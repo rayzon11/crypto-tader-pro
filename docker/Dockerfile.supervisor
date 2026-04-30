@@ -1,0 +1,24 @@
+# docker/Dockerfile.supervisor
+FROM python:3.11-slim
+LABEL description="Supervisor Agent"
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev redis-tools && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY supervisor/ ./supervisor/
+COPY agents/ ./agents/
+COPY config/ ./config/
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD redis-cli -h ${REDIS_HOST:-redis} ping | grep -q PONG || exit 1
+
+RUN adduser --disabled-password --no-create-home botuser
+USER botuser
+
+CMD ["python", "-m", "supervisor.supervisor_agent"]

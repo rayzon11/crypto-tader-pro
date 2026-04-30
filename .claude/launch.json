@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "CryptoBot Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:/Users/admin/Downloads/crypto-trading-bot/frontend",
+      "port": 3001
+    },
+    {
+      "name": "CryptoBot Backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:/Users/admin/Downloads/crypto-trading-bot",
+      "port": 3002
+    }
+  ]
+}

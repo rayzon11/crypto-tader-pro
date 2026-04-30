@@ -1,0 +1,41 @@
+{
+  "pairs": [
+    {
+      "symbol": "BTC/USDT",
+      "allocation": 0.40,
+      "max_position_pct": 0.20,
+      "enabled": true
+    },
+    {
+      "symbol": "ETH/USDT",
+      "allocation": 0.30,
+      "max_position_pct": 0.20,
+      "enabled": true
+    },
+    {
+      "symbol": "SOL/USDT",
+      "allocation": 0.15,
+      "max_position_pct": 0.15,
+      "enabled": true
+    },
+    {
+      "symbol": "BNB/USDT",
+      "allocation": 0.10,
+      "max_position_pct": 0.10,
+      "enabled": true
+    },
+    {
+      "symbol": "AVAX/USDT",
+      "allocation": 0.05,
+      "max_position_pct": 0.10,
+      "enabled": true
+    }
+  ],
+  "risk_limits": {
+    "max_drawdown_pct": 0.05,
+    "max_position_pct": 0.20,
+    "daily_loss_limit_usdt": 500,
+    "max_open_positions": 5,
+    "leverage": 1
+  }
+}

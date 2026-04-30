@@ -1,0 +1,293 @@
+# docker/docker-compose.yml
+version: "3.9"
+
+x-agent: &agent
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.agent
+  restart: unless-stopped
+  environment:
+    REDIS_HOST: redis
+    POSTGRES_URL: postgresql://botuser:${POSTGRES_PASSWORD}@postgres:5432/cryptobot
+    BINANCE_API_KEY: ${BINANCE_API_KEY}
+    BINANCE_SECRET: ${BINANCE_SECRET}
+    PAPER_TRADING: ${PAPER_TRADING:-true}
+    GLASSNODE_API_KEY: ${GLASSNODE_API_KEY:-}
+    INFURA_URL: ${INFURA_URL:-}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  networks: [botnet]
+
+services:
+  # === INFRASTRUCTURE ===
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [botnet]
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cryptobot
+      POSTGRES_USER: botuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [botnet]
+
+  # === SUPERVISOR ===
+  supervisor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.supervisor
+    restart: unless-stopped
+    ports: ["8765:8765"]
+    environment:
+      REDIS_HOST: redis
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [botnet]
+
+  # === STRATEGY LAYER ===
+  agent-trend:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.trend_agent
+
+  agent-momentum:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.momentum_agent
+
+  agent-mean-reversion:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.mean_reversion_agent
+
+  agent-arbitrage:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.arbitrage_agent
+
+  agent-breakout:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.breakout_agent
+
+  # === DATA & RISK LAYER ===
+  agent-sentiment:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.data_risk.sentiment_agent
+
+  agent-onchain:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.data_risk.onchain_agent
+
+  agent-risk:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.data_risk.risk_agent
+
+  agent-portfolio:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.data_risk.portfolio_agent
+
+  agent-orderbook:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.data_risk.orderbook_agent
+
+  # === EXECUTION LAYER ===
+  agent-order:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.execution.order_agent
+
+  agent-slippage:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.execution.slippage_agent
+
+  agent-stoploss:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.execution.stoploss_agent
+
+  agent-fee:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.execution.fee_agent
+
+  agent-defi:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.execution.defi_agent
+
+  # === INTELLIGENCE LAYER ===
+  agent-ml:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.ml_agent
+
+  agent-backtest:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.backtest_agent
+
+  agent-alert:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.alert_agent
+
+  agent-audit:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.audit_agent
+
+  agent-rebalance:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.rebalance_agent
+
+  # === SECURITY LAYER ===
+  agent-npm-security:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.security.npm_security_agent
+
+  agent-db-security:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.security.db_security_agent
+
+  agent-code-security:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.security.code_security_agent
+
+  # === NEW AGENTS (v2) ===
+  agent-news:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.intelligence.news_agent
+    environment:
+      REDIS_HOST: redis
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+
+  agent-indicator-master:
+    <<: *agent
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+      args:
+        AGENT_MODULE: agents.strategy.indicator_master_agent
+
+  # === DASHBOARD ===
+  dashboard:
+    build:
+      context: ../frontend
+    ports: ["3000:3000"]
+    environment:
+      NEXT_PUBLIC_WS_URL: ws://supervisor:8765/supervisor
+    networks: [botnet]
+
+volumes:
+  pgdata:
+
+networks:
+  botnet:
+    driver: bridge

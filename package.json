@@ -1,0 +1,32 @@
+{
+  "name": "cryptotrader-pro",
+  "version": "1.0.0",
+  "description": "25-Agent AI-Powered Crypto Trading System with Claude orchestrator",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "demo": "MODE=DEMO node src/index.js",
+    "dev": "nodemon src/index.js",
+    "frontend": "npm run dev --prefix frontend -- -p 3001",
+    "both": "concurrently \"npm start\" \"npm run frontend\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "optionalDependencies": {
+    "binance-api-node": "^0.12.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
